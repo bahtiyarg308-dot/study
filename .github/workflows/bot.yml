@@ -1,0 +1,46 @@
+name: Telegram-бот
+
+# Каждые 5 минут запускается и работает ~5 минут: принимает сообщения, шлёт напоминания.
+# Пока в Settings → Secrets → Actions нет TG_TOKEN, FB_EMAIL и FB_PASSWORD, ничего не делает.
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: telegram-bot
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  bot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      TG_TOKEN: ${{ secrets.TG_TOKEN }}
+      TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+      FB_EMAIL: ${{ secrets.FB_EMAIL }}
+      FB_PASSWORD: ${{ secrets.FB_PASSWORD }}
+      APP_URL: https://bahtiyarg308-dot.github.io/study/
+      BOT_SECONDS: '280'
+    steps:
+      - name: Нет секретов
+        if: ${{ env.TG_TOKEN == '' || env.FB_EMAIL == '' || env.FB_PASSWORD == '' }}
+        run: echo "::notice::Добавь секреты TG_TOKEN, FB_EMAIL, FB_PASSWORD (см. bot/README.md), бот пока спит."
+      - uses: actions/checkout@v4
+        if: ${{ env.TG_TOKEN != '' && env.FB_EMAIL != '' && env.FB_PASSWORD != '' }}
+      - uses: actions/setup-node@v4
+        if: ${{ env.TG_TOKEN != '' && env.FB_EMAIL != '' && env.FB_PASSWORD != '' }}
+        with:
+          node-version: 22
+      - name: Бот
+        if: ${{ env.TG_TOKEN != '' && env.FB_EMAIL != '' && env.FB_PASSWORD != '' }}
+        run: node bot/bot.mjs
+      - name: Не даём расписанию уснуть
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow enable bot.yml --repo "$GITHUB_REPOSITORY" || true
