@@ -95,11 +95,27 @@ await handle(cb('d:nope:t', 55)); ok('a stale button does not crash', true);
 await clear(); await handle(msg('/soon'));
 ok('/soon lists upcoming deadlines', /Лаба по физике/.test((await last('sendMessage')).text) && /Позвонить маме/.test((await last('sendMessage')).text));
 
+// — нижнее меню и цветные кнопки
+await clear(); await handle(msg('Сегодня'));
+ok('the bottom-menu button «Сегодня» opens today (not added as a task)', /Позвонить маме|Дела|Хвосты|чисто/.test((await last('sendMessage')).text) && !St.items().some(x => x.title === 'Сегодня'));
+await clear(); await handle(msg('скоро'));
+ok('«Скоро» works in any letter case', /Ближайшие сроки|ближайшие две недели/.test((await last('sendMessage')).text));
+await clear(); await handle(msg('Настройки'));
+ok('«Настройки» opens settings', /Утренняя сводка/.test((await last('sendMessage')).text));
+await clear(); await handle(msg('/help'));
+const hk = (await last('sendMessage')).reply_markup;
+ok('help carries the persistent bottom menu with a placeholder', hk.is_persistent === true && hk.resize_keyboard === true && /сдать лабу/.test(hk.input_field_placeholder) && hk.keyboard.flat().map(b => b.text).join('|') === 'Сегодня|Скоро|Память|Настройки|Открыть Тень');
+ok('the menu has the Mini App as a button', hk.keyboard.flat().some(b => b.web_app && b.web_app.url === 'https://example.test/app/'));
+St.addItem({ title: 'Проверка цвета', due: D.todayISO() });
+await clear(); await handle(msg('/today'));
+const tb = buttons(await last('sendMessage'));
+ok('inline buttons are coloured: done is green, the app is blue', tb.find(b => /^d:/.test(b.callback_data)).style === 'success' && tb.find(b => b.web_app).style === 'primary');
+
 // — память прямо в Telegram
 await clear(); await handle(msg('/memory'));
 let c1 = await last('sendMessage');
 ok('/memory sends the most urgent card with the answer hidden behind a spoiler', /Conditionals/.test(c1.text) && /<tg-spoiler>if \+ past simple<\/tg-spoiler>/.test(c1.text));
-ok('and three grade buttons, no extra «show answer» step', buttons(c1).filter(b => /^rv:/.test(b.callback_data)).length === 3 && !buttons(c1).some(b => /^rk:/.test(b.callback_data)));
+ok('and three grade buttons (red / default / green), no extra «show answer» step', buttons(c1).filter(b => /^rv:/.test(b.callback_data)).map(b => b.style || '-').join(',') === 'danger,-,success' && !buttons(c1).some(b => /^rk:/.test(b.callback_data)));
 await handle(cb('rv:tp2:2', 60));
 ok('a grade is applied to the topic (memory updated, same model as the app)', St.get_('tp2').mem.n === 2 && St.get_('tp2').mem.s > 1.5, JSON.stringify(St.get_('tp2').mem.s));
 ok('the next card appears in the same message', /Present Perfect/.test((await last('editMessageText')).text));
@@ -157,6 +173,7 @@ await main();
 ok('the main loop picks up a queued message', St.items().some(x => x.title === 'Проверка цикла'));
 ok('and remembers the offset so nothing is processed twice', S.bot.off > 0);
 const cl = await calls();
+ok('the menu appears by itself on the first run, once', cl.filter(c => c.method === 'sendMessage' && c.reply_markup && c.reply_markup.keyboard).length === 1 && S.bot.kb === 1);
 ok('first run sets commands, description and the Mini App menu button', cl.some(c => c.method === 'setMyCommands' && c.commands.length >= 6) && cl.some(c => c.method === 'setMyDescription') && cl.some(c => c.method === 'setChatMenuButton' && c.menu_button.web_app.url === 'https://example.test/app/'));
 doc = await cloud();
 ok('the loop pushed the new task to the cloud', doc.items.some(x => x.title === 'Проверка цикла'));

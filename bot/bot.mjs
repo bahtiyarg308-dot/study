@@ -28,8 +28,11 @@ export async function tg(method, p = {}) {
 const esc = s => String(s ?? '').replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
 const send = (chat, text, extra = {}) => tg('sendMessage', { chat_id: chat, text, parse_mode: 'HTML', link_preview_options: { is_disabled: true }, ...extra });
 const edit = (chat, mid, text, extra = {}) => tg('editMessageText', { chat_id: chat, message_id: mid, text, parse_mode: 'HTML', link_preview_options: { is_disabled: true }, ...extra }).catch(e => { if (!/not modified/i.test(e.message)) throw e; });
-const btn = (text, data) => ({ text, callback_data: data });
-const appBtn = text => ({ text, web_app: { url: APP_URL() } });
+const btn = (text, data, style) => ({ text, callback_data: data, ...(style ? { style } : {}) }); // style: primary (синяя), success (зелёная), danger (красная); старые клиенты игнорируют
+const appBtn = text => ({ text, web_app: { url: APP_URL() }, style: 'primary' });
+const LABELS = { 'сегодня': 'today', 'скоро': 'soon', 'память': 'memory', 'настройки': 'settings' };   // кнопки нижнего меню
+const KB_V = 1;                                                                                          // поднять, чтобы бот заново прислал меню
+const replyKb = () => ({ keyboard: [[{ text: 'Сегодня' }, { text: 'Скоро' }], [{ text: 'Память' }, { text: 'Настройки' }], [{ text: 'Открыть Тень', web_app: { url: APP_URL() }, style: 'primary' }]], resize_keyboard: true, is_persistent: true, input_field_placeholder: 'Напиши дело: сдать лабу в пятницу в 18:00' });
 const cut = (s, n = 22) => (s.length > n ? s.slice(0, n - 1).trimEnd() + '…' : s);
 const kb = rows => ({ reply_markup: { inline_keyboard: rows } });
 
@@ -91,13 +94,13 @@ const itemLine = it => `${tm(it)}${esc(it.title)}${sub(it)}`;
 const tailLine = (it, t) => `${esc(it.title)} · <i>просрочено ${D.days(-St.daysTo(it, t))}</i>`;
 const dayName = (d, t) => (d === t ? 'Сегодня' : d === D.addDays(t, 1) ? 'Завтра' : D.fmtDay(d));
 const whenText = (it, t) => (!it.due ? 'без срока' : St.isTail(it, t) ? `просрочено на ${D.days(-St.daysTo(it, t))}` : (it.due === t ? 'сегодня' : D.rel(it.due, t)) + (it.time ? `, ${it.time}` : ''));
-const doneRows = (list, v) => list.slice(0, 4).map(it => [btn('✓ ' + cut(it.title, 18), `d:${it.id}:${v}`), btn('Завтра', `z:${it.id}:${v}`)]);
+const doneRows = (list, v) => list.slice(0, 4).map(it => [btn('✓ ' + cut(it.title, 18), `d:${it.id}:${v}`, 'success'), btn('Завтра', `z:${it.id}:${v}`)]);
 const memSubs = () => Mem.subjects(St.items());
 const memPlan = () => Mem.plan(memSubs(), Date.now(), St.settings().memSec || 90);
 const tails = t => open().filter(x => St.isTail(x, t)).sort((a, b) => a.due.localeCompare(b.due));
 const todays = t => open().filter(x => x.due === t).sort((a, b) => (a.time || '99').localeCompare(b.time || '99'));
 const nCards = n => `${n} ${D.plural(n, ['карточка', 'карточки', 'карточек'])}`;
-const bottom = n => [...(n ? [btn(`Память · ${n}`, 'mem')] : []), appBtn('Открыть Тень')];
+const bottom = n => [...(n ? [btn(`Память · ${n}`, 'mem', 'primary')] : []), appBtn('Открыть Тень')];
 
 function viewToday(t, head = 'Сегодня') {
   const tl = tails(t), td = todays(t), pl = memPlan(), list = [...tl, ...td], parts = [];
@@ -123,7 +126,7 @@ const rerender = { t: viewToday, s: viewSoon, x: viewTails };
 /* память: карточки по одной, ответ скрыт «спойлером» (тап открывает), состояние хранится в самих темах */
 function card(x, left) {
   const text = `<b>${esc(x.title)}</b>${x.subject ? `\n<i>${esc(x.subject)}</i>` : ''}\n\nРасскажи вслух или набросай по памяти, потом оцени себя.${x.key ? `\n\n<b>Ответ</b>\n<tg-spoiler>${esc(x.key)}</tg-spoiler>` : ''}\n\n<i>Осталось в плане: ${left}</i>`;
-  return { text, ...kb([Mem.GRADES.map(([l, g]) => btn(l, `rv:${x.id}:${g}`))]) };
+  return { text, ...kb([Mem.GRADES.map(([l, g]) => btn(l, `rv:${x.id}:${g}`, g === 2 ? 'success' : g === 0 ? 'danger' : undefined))]) };
 }
 async function nextCard(chat, mid) {
   const q = memPlan().queue;
@@ -155,16 +158,17 @@ async function addText(chat, text) {
   if (!items.length) return send(chat, 'Не вижу дела в этом сообщении. Напиши, например: <i>сдать лабу в пятницу в 18:00</i>');
   const t = D.todayISO(), made = items.slice(0, 20).map(p => St.addItem({ title: p.title, due: p.due, time: p.due ? p.time : null, source: 'telegram' }));
   const key = Date.now().toString(36); S.bot.undo[key] = made.map(x => x.id); mark();
-  return send(chat, `<b>Добавлено</b>\n${made.map(x => `${esc(x.title)}  <i>${esc(whenText(x, t))}</i>`).join('\n')}`, kb([[btn('Отменить', `u:${key}`)]]));
+  return send(chat, `<b>Добавлено</b>\n${made.map(x => `${esc(x.title)}  <i>${esc(whenText(x, t))}</i>`).join('\n')}`, kb([[btn('Отменить', `u:${key}`, 'danger')]]));
 }
 async function onMessage(m) {
   const chat = m.chat.id, text = (m.text || '').trim();
   if (!text) return send(chat, 'Пока понимаю только текст. Напиши дело словами.');
   const t = D.todayISO();
+  const lab = LABELS[text.toLowerCase()]; if (lab) return onMessage({ ...m, text: '/' + lab });
   if (text[0] === '/') {
     const [cmd, ...rest] = text.split(/\s+/), c = cmd.slice(1).split('@')[0].toLowerCase(), arg = rest.join(' ');
-    if (c === 'start') return S.bot.tz ? send(chat, HELP) : send(chat, 'Привет. Выбери часовой пояс, чтобы напоминания приходили вовремя.', kb(zoneRows()));
-    if (c === 'help') return send(chat, HELP);
+    if (c === 'start') return S.bot.tz ? send(chat, HELP, { reply_markup: replyKb() }) : send(chat, 'Привет. Выбери часовой пояс, чтобы напоминания приходили вовремя.', kb(zoneRows()));
+    if (c === 'help') return send(chat, HELP, { reply_markup: replyKb() });
     if (c === 'today') { const v = viewToday(t); return send(chat, v.text, { reply_markup: v.reply_markup }); }
     if (c === 'soon') { const v = viewSoon(t); return send(chat, v.text, { reply_markup: v.reply_markup }); }
     if (c === 'tails') { const v = viewTails(t); return send(chat, v.text, { reply_markup: v.reply_markup }); }
@@ -201,7 +205,8 @@ async function onCallback(cq) {
   if (a === 'tz') {
     if (!validTz(x)) { await ack('Не знаю такой пояс'); return; }
     S.bot.tz = x; mark(); applyTz(); await ack('Готово');
-    return edit(chat, mid, `Часовой пояс: <code>${esc(x)}</code>\n\n${HELP}`, { reply_markup: { inline_keyboard: [] } });
+    await edit(chat, mid, `Часовой пояс: <code>${esc(x)}</code>`, { reply_markup: { inline_keyboard: [] } });
+    return send(chat, HELP, { reply_markup: replyKb() });
   }
   if (a === 'c') {
     const b = S.bot;
@@ -234,7 +239,7 @@ export async function tick(now = new Date()) {
     if (!x.time) continue;
     const [hh, mm] = x.time.split(':').map(Number), at = hh * 60 + mm;
     if (min >= at - 30 && min < at + 20 && once(`t:${x.id}:${t}${x.time}`)) {
-      await send(b.chat, `<b>${min < at ? `Через ${at - min} мин` : 'Пора'}</b> · ${esc(x.title)}\n<code>${x.time}</code>${x.subject ? ` · <i>${esc(x.subject)}</i>` : ''}`, kb([[btn('Готово', `d:${x.id}:r`), btn('Завтра', `z:${x.id}:r`)]]));
+      await send(b.chat, `<b>${min < at ? `Через ${at - min} мин` : 'Пора'}</b> · ${esc(x.title)}\n<code>${x.time}</code>${x.subject ? ` · <i>${esc(x.subject)}</i>` : ''}`, kb([[btn('Готово', `d:${x.id}:r`, 'success'), btn('Завтра', `z:${x.id}:r`)]]));
     }
   }
   if (b.eve && h >= 20 && h < 23 && once('eve:' + t)) {
@@ -263,6 +268,9 @@ export async function main() {
   const end = Date.now() + (+E.BOT_SECONDS || 280) * 1000;
   await auth(); await loadBot(); await pull(); S.pushedAt = Date.now();
   try { await setup(); } catch (e) { log('setup:', e.message); }
+  if (S.bot.chat && S.bot.kb !== KB_V) {                                            // меню внизу чата появляется само, без /start
+    try { await send(S.bot.chat, 'Внизу появилось меню. Дела можно писать прямо в строку ввода.', { reply_markup: replyKb() }); S.bot.kb = KB_V; mark(); } catch (e) { log('меню:', e.message); }
+  }
   await saveBot();
   log('бот запущен, дел:', St.items().length, 'пояс:', S.bot.tz || 'не выбран');
   let lastPull = Date.now(), lastTick = 0;
