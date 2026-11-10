@@ -1,6 +1,8 @@
 // Тихие звуки интерфейса: рождаются на телефоне, файлов нет. Выключаются в настройках.
 export const cfg = { on: true, vol: 2 };
-let actx = null, out = null;
+let actx = null, out = null, lastAt = -1e9;
+/** Сколько миллисекунд назад что-то звучало: чтобы общий щелчок не накладывался на звук самого действия. */
+export const sinceLast = () => performance.now() - lastAt;
 const ctx = () => {
   if (!actx) {
     try { actx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { return null; }
@@ -21,8 +23,11 @@ const PENTA = [523.25, 587.33, 659.25, 783.99, 880.0];
 export function sfx(name, a = 0) {
   if (!cfg.on || !cfg.vol) return;
   const c = ctx(); if (!c) return;
+  lastAt = performance.now();
   switch (name) {
     case 'tap': tone(c, 760, 0, .05, .14, 'triangle'); break;
+    case 'press': tone(c, 520, 0, .07, .17, 'triangle'); tone(c, 340, .025, .09, .12, 'sine'); break; // главные кнопки
+    case 'chip': tone(c, 1040, 0, .035, .11, 'triangle'); break; // фишки, переключатели, дни
     case 'lens': tone(c, PENTA[a % 5], 0, .16, .2, 'sine'); break;
     case 'toggle': tone(c, a ? 740 : 520, 0, .07, .16, 'triangle'); break;
     case 'add': tone(c, 523, 0, .09, .16, 'sine'); tone(c, 784, .07, .12, .16, 'sine'); break;
@@ -35,3 +40,7 @@ export function sfx(name, a = 0) {
   }
 }
 export const buzz = ms => { try { navigator.vibrate && navigator.vibrate(ms); } catch (e) { /* нет поддержки */ } };
+
+// iPhone включает звук только после касания: будим звук первым же нажатием, пока он ещё тихий и ничего не играет
+const unlock = () => { if (cfg.on && cfg.vol) ctx(); };
+['pointerdown', 'touchstart', 'keydown'].forEach(t => document.addEventListener(t, unlock, { once: true, capture: true, passive: true }));

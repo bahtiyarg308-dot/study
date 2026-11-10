@@ -208,8 +208,9 @@ export function icsFor(list) {
     }
     out.push(`SUMMARY:${icsEsc(it.title)}`);
     if (it.subject) out.push(`DESCRIPTION:${icsEsc(it.subject)}`);
-    const rm = it.remind ?? 60 * 9; // по умолчанию — за 9 часов (утро дня срока для событий на день)
-    out.push('BEGIN:VALARM', 'ACTION:DISPLAY', `DESCRIPTION:${icsEsc(it.title)}`, `TRIGGER:-PT${Math.max(1, rm)}M`, 'END:VALARM', 'END:VEVENT');
+    // с временем: за 30 минут (или как выбрано); без времени: в 9:00 в день срока, «за день» — в 9:00 накануне
+    const rm = it.remind, trig = it.time ? `-PT${Math.max(1, rm || 30)}M` : (rm >= 1440 ? `-PT${Math.round(rm / 60 - 9)}H` : 'PT9H');
+    out.push('BEGIN:VALARM', 'ACTION:DISPLAY', `DESCRIPTION:${icsEsc(it.title)}`, `TRIGGER:${trig}`, 'END:VALARM', 'END:VEVENT');
   }
   out.push('END:VCALENDAR');
   return out.join('\r\n');

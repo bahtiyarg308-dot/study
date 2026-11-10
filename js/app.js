@@ -2,7 +2,7 @@ import * as D from './dates.js';
 import * as St from './store.js';
 import { layout, radarHTML } from './radar.js';
 import * as AI from './ai.js';
-import { sfx, buzz, cfg as sndCfg } from './sfx.js';
+import { sfx, buzz, sinceLast, cfg as sndCfg } from './sfx.js';
 import * as Auth from './auth.js';
 import * as F from './fb.js';
 import { openGate, isOpen as gateOpen } from './gate.js';
@@ -199,7 +199,7 @@ function settingsHTML() {
   const tog = (k, t, d, on) => `<button class="mrow" data-act="tog" data-k="${k}" role="switch" aria-checked="${on}"><span class="grow"><b>${t}</b><small>${d}</small></span><span class="switch" aria-checked="${on}"></span></button>`;
   return `<div class="tg">${['mrak', 'noch', 'bumaga', 'pastel'].map(card).join('')}</div>
   <div class="lbl">Акцент · ${pal[curKey]?.[4] || ''}</div><div class="cdots" role="group" aria-label="Акцент">${dots}</div>
-  <div class="panel mlist" style="margin-top:18px">${tog('auto', 'Авто по времени суток', 'С 20:00 до 7:00 — «Мрак», днём — «Бумага»', !!s.auto)}${tog('snd', 'Звуки', 'Тихие щелчки и ноты на панели', snd.on !== false)}${tog('calm', 'Тише анимации', 'Выключить всё движение', !!s.calm)}</div>
+  <div class="panel mlist" style="margin-top:18px">${tog('auto', 'Авто по времени суток', 'С 20:00 до 7:00 — «Мрак», днём — «Бумага»', !!s.auto)}${tog('snd', 'Звуки', 'Щелчок на каждую кнопку и ноты на панели', snd.on !== false)}${snd.on !== false ? `<div class="mrow"><span class="grow"><b>Громкость</b></span><div class="seg" role="group" aria-label="Громкость">${[[1, 'Тихо'], [2, 'Средне'], [3, 'Громко']].map(([v, l]) => `<button aria-pressed="${(snd.vol ?? 2) === v}" data-act="vol" data-v="${v}">${l}</button>`).join('')}</div></div>` : ''}${tog('calm', 'Тише анимации', 'Выключить всё движение', !!s.calm)}</div>
   <div class="lbl">Как к тебе обращаться</div><input class="field" id="sname" placeholder="Имя, по желанию" value="${esc(s.name || '')}" maxlength="24" autocomplete="off">`;
 }
 function refreshSettings() {
@@ -275,7 +275,7 @@ function openEditor(id) {
       <div class="lbl">Сколько часов работы</div><input class="field" id="eest" inputmode="decimal" placeholder="Например: 3 (нужно для цены откладывания)" value="${it?.est ?? ''}">
       <div class="lbl">Первый шаг</div><input class="field" id="estep" placeholder="Например: открыть проект и запустить сцену" value="${esc(it?.step || '')}">
       <div class="row2"><div><div class="lbl">Шаг, минут</div><input class="field" id="emin" inputmode="numeric" placeholder="15" value="${it?.stepMin ?? ''}"></div>
-      <div><div class="lbl">Напомнить в календаре</div><div class="select"><select class="field" id="erem"><option value="">за 9 часов</option><option value="15">за 15 минут</option><option value="60">за час</option><option value="1440">за день</option></select></div></div></div>
+      <div><div class="lbl">Напомнить в календаре</div><div class="select"><select class="field" id="erem"><option value="">по умолчанию</option><option value="15">за 15 минут</option><option value="60">за час</option><option value="1440">за день</option></select></div></div></div>
       <button class="mrow" id="epriv" type="button" role="switch" aria-checked="${!!it?.priv}" style="padding:14px 0;margin-top:6px"><span class="grow"><b>Личное</b><small>Не показывать ИИ-помощнику</small></span><span class="switch" aria-checked="${!!it?.priv}"></span></button></details></div>`,
     foot: `<button class="btn btn-primary btn-lg btn-block" id="esave">${it ? 'Сохранить' : 'Добавить'}</button>`,
     onOpen: sh => { sh.querySelector('#erem').value = it?.remind ? String(it.remind) : ''; },
@@ -498,6 +498,7 @@ const H = {
   'room-more': () => { const st = roomState; if (!st) return; st.total = st.left = st.minutes * 60; st.finished = false; st.last = performance.now(); st.el.querySelector('#rl').textContent = 'ОСТАЛОСЬ'; st.el.querySelector('#rb').innerHTML = '<button class="btn btn-ghost" data-act="room-pause" id="rp">Пауза</button><button class="btn" data-act="room-done">Готово</button>'; },
   sub: el => { ui.sub = el.dataset.s || null; ui.enter = true; render(); window.scrollTo(0, 0); sfx('tap'); },
   theme: el => { St.setSettings({ theme: el.dataset.t, auto: false }); sfx('tap'); refreshSettings(); },
+  vol: el => { St.setSettings({ snd: { ...(St.settings().snd || {}), vol: +el.dataset.v } }); syncSound(); sfx('press'); refreshSettings(); },
   accent: el => { const look = THEMES[themeId()].look; St.setSettings(look === 'noir' ? { noirAcc: el.dataset.k } : { accent: el.dataset.k }); sfx('tap'); refreshSettings(); },
   tog: el => {
     const k = el.dataset.k, s = St.settings();
@@ -544,6 +545,23 @@ document.addEventListener('click', e => { if (e.target.closest('.swp-fg') && Dat
 document.addEventListener('click', e => {
   const el = e.target.closest('[data-act]'); if (!el) return;
   const f = H[el.dataset.act]; if (f) { e.preventDefault(); f(el, e); }
+});
+/* звук на любую кнопку: если действие само ничего не сыграло, играет общий щелчок */
+const SND_SEL = 'button, summary, a[href], [role=button], [role=switch], .tab, .addb, .cdot';
+function clickKind(el) {
+  if (el.matches('[role=switch], .switch')) return ['toggle', el.getAttribute('aria-checked') === 'true' ? 1 : 0];
+  if (el.matches('.btn-danger, [data-act=del], [data-act=swdel], [data-act=wipe], [data-act=acc-out]')) return ['del'];
+  if (el.matches('[data-act=close], [data-act=room-exit], [aria-label="Назад"], [aria-label="Закрыть"], [data-act=sub][data-s=""]')) return ['close'];
+  if (el.matches('.chip, .seg button, .cdot, .tc, .pvc, .wd, .hc, .fl button')) return ['chip'];
+  if (el.matches('.btn-primary, .addb, .send, .btn-lg')) return ['press'];
+  return ['tap'];
+}
+document.addEventListener('click', e => {
+  const el = e.target.closest(SND_SEL); if (!el || el.disabled) return;
+  if (el.matches('.tab') && el.closest('#tabs')) return;                       // у панели своя нота (линза)
+  if (el.closest('.swp-fg') && Date.now() - swLast < 400) return;              // это было смахивание
+  if (sinceLast() < 90) return;                                                // действие уже издало свой звук
+  const [k, a] = clickKind(el); sfx(k, a);
 });
 document.addEventListener('change', e => {
   const id = e.target.id, a = AI.cfg();
