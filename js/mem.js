@@ -34,16 +34,20 @@ export const dueAt = m => (m && m.n ? m.t + m.s * DAY : 0);
 /** Экзамен считаем в 9 утра указанного дня. */
 export const examTs = iso => fromISO(iso).getTime() + 9 * 36e5;
 
-/** Темы → предметы. Дата предмета — ближайшая из дат его тем. */
+/** Темы → направления. Дата — ближайшая из дат тем. area: 'uni' (учёба, экзамен) или 'self' (для себя). pace — новых тем в день, когда даты нет. */
+export const PACE = 2;
 export function subjects(items) {
   const g = new Map();
   for (const x of items) {
     if (x.kind !== 'topic') continue;
     const name = (x.subject || '').trim(), key = name.toLowerCase();
-    if (!g.has(key)) g.set(key, { key, name: name || 'Без предмета', due: null, topics: [] });
+    if (!g.has(key)) g.set(key, { key, name: name || 'Без предмета', due: null, area: null, pace: null, topics: [] });
     const s = g.get(key); s.topics.push(x);
     if (x.due && (!s.due || x.due < s.due)) s.due = x.due;
+    if (!s.area && x.area) s.area = x.area;
+    if (!s.pace && x.pace) s.pace = x.pace;
   }
+  for (const s of g.values()) { if (!s.area) s.area = s.due ? 'uni' : 'self'; if (!s.pace) s.pace = PACE; }
   return [...g.values()];
 }
 
@@ -71,7 +75,8 @@ export function plan(subs, now = Date.now(), memSec = 90) {
     const untouched = s.topics.filter(x => !(x.mem && x.mem.n));
     const intro = s.topics.filter(x => x.mem && x.mem.n && x.mem.h && x.mem.h[0] && x.mem.h[0][0] >= d0.getTime()).length;
     const total = untouched.length + intro;
-    const quota = total ? Math.max(0, Math.ceil(total / (left ? Math.max(1, left - 2) : 6)) - intro) : 0;
+    // с датой: раскладываем до дня экзамена; без даты: в своём темпе
+    const quota = !total ? 0 : left ? Math.max(0, Math.ceil(total / Math.max(1, left - 2)) - intro) : Math.max(0, (s.pace || PACE) - intro);
     for (const x of s.topics) {
       const r = rec(x.mem, now);
       if (r !== null && r < FADE_AT) fade.push({ x, r, E, sub: s });

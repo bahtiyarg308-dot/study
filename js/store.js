@@ -103,18 +103,27 @@ export function reviewTopic(id, g, at = Date.now()) {
   const it = S.items.find(x => x.id === id && x.kind === 'topic'); if (!it) return null;
   it.mem = memAfter(it.mem, g, at); it.u = at; touch(); return it;
 }
-/** Карточка экзамена на горизонте: одна на предмет, дата следует за темами. */
-export function ensureExam(subject, due) {
+const examTitle = (area, name) => `${area === 'self' ? 'Цель' : 'Экзамен'}: ${name.trim()}`;
+/** Карточка срока на горизонте: одна на направление, дата следует за темами. */
+export function ensureExam(subject, due, area = 'uni') {
   if (!due) return null;
   const ex = S.items.find(x => x.exam && skey(x.subject) === skey(subject));
   if (ex) { if (ex.due !== due) return updateItem(ex.id, { due, done: false, doneAt: null }); return ex; }
-  return addItem({ title: `Экзамен: ${subject.trim()}`, due, subject: subject.trim(), exam: true, source: 'memory' });
+  return addItem({ title: examTitle(area, subject), due, subject: subject.trim(), exam: true, source: 'memory' });
 }
-/** Переименовать предмет и/или сменить дату экзамена у всех его тем. */
-export function editSubject(oldName, name, due) {
+/** Переименовать направление, сменить дату, тип и темп у всех его тем. Пустая дата убирает карточку срока. */
+export function editSubject(oldName, name, due, extra = {}) {
   const k = skey(oldName), now = Date.now(); name = name.trim();
-  S.items.forEach(x => { if (skey(x.subject) === k && (x.kind === 'topic' || x.exam)) { x.subject = name; if (x.kind === 'topic') x.due = due || null; x.u = now; } });
-  if (due) ensureExam(name, due);
+  S.items.forEach(x => {
+    if (skey(x.subject) !== k) return;
+    if (x.kind === 'topic') { x.subject = name; x.due = due || null; if (extra.area) x.area = extra.area; if (extra.pace) x.pace = extra.pace; x.u = now; }
+    else if (x.exam) {
+      const was = /^(Экзамен|Цель): /.test(x.title) && x.title.slice(x.title.indexOf(': ') + 2) === oldName.trim();
+      x.subject = name; if (was) x.title = examTitle(extra.area || (x.title.startsWith('Цель') ? 'self' : 'uni'), name); x.u = now;
+    }
+  });
+  if (due) ensureExam(name, due, extra.area || 'uni');
+  else S.items.filter(x => x.exam && skey(x.subject) === skey(name)).forEach(x => { S.items = S.items.filter(y => y.id !== x.id); S.dead[x.id] = now; });
   touch();
 }
 export function removeSubject(name) {
@@ -212,7 +221,8 @@ export function loadDemo() {
   const hist = (...steps) => steps.reduce((m, [daysAgo, g]) => memAfter(m, g, ago(daysAgo)), null);
   const eng = [['Present Perfect', hist([6, 2], [2.5, 2])], ['Conditionals', hist([5, 1])], ['Phrasal verbs', hist([1, 2])], ['Passive voice', null], ['Reported speech', null], ['Modal verbs', hist([7, 0])], ['Articles', null], ['Word formation', null]];
   const phy = [['Кинематика', hist([4, 2])], ['Законы Ньютона', hist([3, 1])], ['Работа и энергия', null], ['Импульс', null], ['Колебания', null], ['Термодинамика', null]];
-  addMany([...eng.map(([title, mem]) => ({ kind: 'topic', title, subject: 'Английский', due: d(17), mem, source: 'demo' })), ...phy.map(([title, mem]) => ({ kind: 'topic', title, subject: 'Физика', due: d(24), mem, source: 'demo' }))]);
+  const py = [['Списки и срезы', hist([8, 2], [4, 2])], ['Словари', hist([2, 1])], ['Функции и аргументы', null, 'def, *args, **kwargs, значения по умолчанию'], ['Генераторы', null], ['Исключения', null], ['Классы и __init__', null]];
+  addMany([...eng.map(([title, mem]) => ({ kind: 'topic', title, subject: 'Английский', due: d(17), area: 'uni', mem, source: 'demo' })), ...phy.map(([title, mem]) => ({ kind: 'topic', title, subject: 'Физика', due: d(24), area: 'uni', mem, source: 'demo' })), ...py.map(([title, mem, key]) => ({ kind: 'topic', title, subject: 'Python для себя', due: null, area: 'self', pace: 2, mem, key: key || '', source: 'demo' }))]);
   addItem({ title: 'Экзамен: Физика', due: d(24), subject: 'Физика', exam: true, source: 'memory' });
   mk({ title: 'Позвонить в деканат', due: d(1), time: '10:00', subject: 'Деканат' });
   mk({ kind: 'note', title: 'Шейдер: туман и rim light. Глянуть урок по PBR.', subject: 'Комп. графика' });

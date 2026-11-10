@@ -9,7 +9,7 @@ import * as F from './fb.js';
 import { openGate, isOpen as gateOpen } from './gate.js';
 import { $, $$, esc, ic, num, toast, openSheet, closeSheet, sheetEl, applyAppearance, THEMES, COLORS, NOIR_ACC, accOf, themeId } from './ui.js';
 
-const APP_VERSION = '2.2';
+const APP_VERSION = '2.3';
 const ui = { view: 'today', sub: null, filter: 'all', lmode: 'list', q: '', day: null, sel: null, enter: true, models: {} };
 const viewEl = $('#view'), tabsEl = $('#tabs');
 const today = () => D.todayISO();
@@ -156,7 +156,7 @@ function vList() {
   const all = St.items(), t = today(), mem = ui.lmode === 'memory';
   const open = all.filter(x => x.kind === 'task' && !x.done), tails = open.filter(x => St.isTail(x, t)).length;
   const topics = all.filter(x => x.kind === 'topic').length;
-  const head = mem ? pageHead(topics ? nTopics(topics) : 'Темы к экзаменам', 'Память', headActs('topics')) : pageHead(`${open.length} открыто`, 'Дела', headActs(true));
+  const head = mem ? pageHead(topics ? nTopics(topics) : 'Что учить', 'Память', headActs('topics')) : pageHead(`${open.length} открыто`, 'Дела', headActs(true));
   const seg = `<div class="seg full" style="margin-bottom:14px"><button aria-pressed="${ui.lmode === 'list' || !ui.lmode}" data-act="lmode" data-m="list">Список</button><button aria-pressed="${mem}" data-act="lmode" data-m="memory">Память</button><button aria-pressed="${ui.lmode === 'activity'}" data-act="lmode" data-m="activity">Активность</button></div>`;
   if (mem) return head + seg + vMemory();
   if (!all.length) return head + emptyState();
@@ -175,9 +175,9 @@ const nTopics = n => `${n} ${D.plural(n, ['тема', 'темы', 'тем'])}`;
 const whenTs = ts => D.rel(D.iso(new Date(ts)), today());
 function orderedSubs() {
   const rank = s => (Mem.stats(s).past ? 2 : s.due ? 0 : 1);
-  return memSubs().sort((a, b) => rank(a) - rank(b) || (a.due || '').localeCompare(b.due || '') || a.name.localeCompare(b.name, 'ru'));
+  return memSubs().sort((a, b) => (a.area === 'uni' ? 0 : 1) - (b.area === 'uni' ? 0 : 1) || rank(a) - rank(b) || (a.due || '').localeCompare(b.due || '') || a.name.localeCompare(b.name, 'ru'));
 }
-const examLabel = (s, st) => (s.due ? `${st.past ? 'Прошёл' : 'Экзамен'} ${D.fmtShort(s.due)}${st.past ? '' : ' · ' + D.rel(s.due, today())}` : 'Без даты экзамена');
+const examLabel = (s, st) => (s.due ? `${st.past ? 'Срок прошёл' : s.area === 'self' ? 'Цель' : 'Экзамен'} ${D.fmtShort(s.due)}${st.past ? '' : ' · ' + D.rel(s.due, today())}` : s.area === 'self' ? `Для себя · новых тем в день: ${s.pace}` : 'Без даты экзамена');
 
 /** Узкая карточка на «Сегодня»: что тускнеет и сколько это займёт. */
 function memCard() {
@@ -196,20 +196,23 @@ function memCard() {
 
 const topicRow = x => {
   const r = Mem.rec(x.mem), cls = r === null ? '' : r < Mem.FADE_AT ? 'fade' : 'ok';
-  return `<div class="trow"><button class="tr-b" data-act="topic" data-id="${x.id}"><b>${esc(x.title)}</b><small>${r === null ? 'не начато' : r < Mem.FADE_AT ? 'тускнеет' : 'свежо'}${x.key ? ' · есть ключ' : ''}</small></button><div class="tr-v ${cls}"><span>${r === null ? '—' : pc(r)}</span><i style="--w:${r === null ? 0 : Math.round(r * 100)}%"></i></div></div>`;
+  return `<div class="trow"><button class="tr-b" data-act="topic" data-id="${x.id}"><b>${esc(x.title)}</b><small>${r === null ? 'не начато' : r < Mem.FADE_AT ? 'тускнеет' : 'свежо'}${x.key ? ' · есть ответ' : ''}</small></button><div class="tr-v ${cls}"><span>${r === null ? '—' : pc(r)}</span><i style="--w:${r === null ? 0 : Math.round(r * 100)}%"></i></div></div>`;
 };
 function vMemory() {
   const subs = orderedSubs();
-  if (!subs.length) return `<div class="empty"><h3>Темы к экзаменам</h3><p>Выпиши темы курса по одной в строке. Тень разложит повторение до дня экзамена и покажет, что тускнеет.</p><button class="btn btn-primary" data-act="topics-add">${ic('plus')}Добавить темы</button><br><button class="link" data-act="demo">Показать пример</button></div>`;
+  if (!subs.length) return `<div class="empty"><h3>Что хочешь запомнить?</h3><p>Темы к экзамену, главы книги, язык, программирование. Выпиши по одной в строке, а Тень будет возвращать их, пока они не забылись, и покажет, что уже тускнеет.</p><button class="btn btn-primary" data-act="topics-add">${ic('plus')}Добавить темы</button><br><button class="link" data-act="demo">Показать пример</button></div>`;
   const pl = memPlan(), f = pl.fade.length, n = pl.fresh.length;
   let h = pl.queue.length
     ? `<div class="panel memtop"><div class="grow"><b>Сегодня: ${pl.queue.length} ${D.plural(pl.queue.length, ['карточка', 'карточки', 'карточек'])}</b><small>${[f ? `тускнеет ${f}` : '', n ? `новых ${n}` : '', `около ${pl.mins} мин`].filter(Boolean).join(' · ')}</small></div><button class="btn btn-primary" data-act="mem-go">Освежить</button></div>`
     : `<div class="panel memtop"><div class="grow"><b>На сегодня всё свежо</b><small>${Mem.nextFade(memSubs()) ? 'Следующее освежение ' + whenTs(Mem.nextFade(memSubs())) : 'Повторять пока нечего'}</small></div></div>`;
+  const both = subs.some(x => x.area === 'uni') && subs.some(x => x.area === 'self');
+  let lastArea = '';
   h += subs.map(s => {
     const st = Mem.stats(s), tone = st.exam === null ? '' : st.exam < 0.5 ? 'bad' : st.exam < 0.75 ? 'gold' : 'good';
     const parts = [st.fade ? `тускнеет ${st.fade}` : '', st.fresh ? `не начато ${st.fresh}` : ''].filter(Boolean).join(' · ') || 'Всё свежо';
-    return `<section class="panel subj"><div class="sj-h"><div class="grow"><b>${esc(s.name)}</b><small>${examLabel(s, st)}</small></div><button class="icon-btn sm" data-act="subj-edit" data-k="${esc(s.key)}" aria-label="Изменить предмет">${ic('more')}</button></div>
-      <div class="mn"><div><b>${pc(st.now)}</b><span>свежесть сейчас</span></div>${st.exam !== null ? `<div class="${tone}"><b>${pc(st.exam)}</b><span>к экзамену без повторов</span></div>` : ''}</div>
+    const head = both && s.area !== lastArea ? `<div class="sec-head" style="margin:${lastArea ? 22 : 4}px 0 -4px"><h2 class="h2">${s.area === 'uni' ? 'Учёба' : 'Для себя'}</h2></div>` : ''; lastArea = s.area;
+    return head + `<section class="panel subj"><div class="sj-h"><div class="grow"><b>${esc(s.name)}</b><small>${examLabel(s, st)}</small></div><button class="icon-btn sm" data-act="subj-edit" data-k="${esc(s.key)}" aria-label="Изменить">${ic('more')}</button></div>
+      <div class="mn"><div><b>${pc(st.now)}</b><span>свежесть сейчас</span></div>${st.exam !== null ? `<div class="${tone}"><b>${pc(st.exam)}</b><span>${s.area === 'self' ? 'к цели без повторов' : 'к экзамену без повторов'}</span></div>` : `<div><b>${st.n - st.fresh}/${st.n}</b><span>тем начато</span></div>`}</div>
       <div class="mstrip" aria-hidden="true">${s.topics.map(x => `<i class="mc l${Mem.level(Mem.rec(x.mem))}"></i>`).join('')}</div>
       <p class="sub" style="margin-top:10px">${parts}</p>
       <details class="more"${subs.length === 1 ? ' open' : ''}><summary>Темы · ${s.topics.length}<span>${ic('chev')}</span></summary><div class="trows">${s.topics.map(x => swipeRow(topicRow(x), x.id)).join('')}</div></details></section>`;
@@ -217,52 +220,80 @@ function vMemory() {
   return h + `<div style="margin-top:14px"><button class="btn-add" data-act="topics-add">${ic('plus')}Добавить темы</button></div><p class="hnote">Яркая клетка — тема свежа в памяти, тусклая — скоро забудется. Свежесть считается по твоим оценкам и кривой забывания.</p>`;
 }
 
-/** Строки → темы: убираем номера и маркеры, повторы и мусор. */
+/** Строки → темы: убираем номера и маркеры, повторы и мусор. «вопрос | ответ» даёт карточку с ответом. */
 function parseTopics(text, have = []) {
   const seen = new Set(have.map(skey)), out = [];
-  for (let line of String(text || '').split(/\r?\n|;/)) {
-    line = line.replace(/^\s*(?:[-–—•*·▪]+|\d+(?:\.\d+)*[.)]?|[a-zа-я]\))\s+/i, '').replace(/\s+/g, ' ').trim();
+  for (let line of String(text || '').split(/\r?\n/)) {
+    line = line.replace(/^\s*(?:[-–—•*·▪]+|\d+(?:\.\d+)*[.)]?|[a-zа-я]\))\s+/i, '');
+    const bar = line.indexOf('|'); let key = '';
+    if (bar > 0) { key = line.slice(bar + 1).replace(/\s+/g, ' ').trim().slice(0, 300); line = line.slice(0, bar); }
+    line = line.replace(/\s+/g, ' ').trim();
     if (line.length < 2 || seen.has(skey(line))) continue;
-    seen.add(skey(line)); out.push(line.slice(0, 120));
+    seen.add(skey(line)); out.push({ title: line.slice(0, 120), key });
   }
   return out.slice(0, 100);
 }
+const AREA = {
+  uni: { head: 'Колледж или университет: экзамен или зачёт в конкретный день.', dl: 'Экзамен или зачёт', ph: 'Например: Математический анализ', tx: '1. Пределы\n2. Производная\n3. Интеграл' },
+  self: { head: 'Язык, программирование, книга, навык: всё, что хочешь освоить и не забыть.', dl: 'К какому дню освоить (необязательно)', ph: 'Например: Python или Английский для работы', tx: 'Списки и срезы\nСловари\nСлово | перевод' },
+};
 function openTopics(key) {
   const sub = key ? memSubs().find(s => s.key === key) : null, names = [...new Set(memSubs().map(s => s.name))];
+  let area = sub ? sub.area : (memSubs().length && !memSubs().some(x => x.area === 'uni') ? 'self' : 'uni');
+  let pace = sub ? sub.pace : Mem.PACE;
   const s = openSheet({
-    eyebrow: 'Память', title: sub ? esc(sub.name) : 'Темы к экзамену',
-    body: `<div class="lbl" style="margin-top:2px">Предмет</div><input class="field" id="tsub" list="tsl" placeholder="Например: Математический анализ" value="${esc(sub ? (sub.topics[0].subject || '').trim() : '')}" autocomplete="off"><datalist id="tsl">${names.map(n => `<option value="${esc(n)}">`).join('')}</datalist>
-    <div class="lbl">Экзамен или зачёт</div><input class="field" type="date" id="tdue" value="${sub?.due || ''}" aria-label="Дата экзамена">
-    <p class="sub" style="font-size:12.5px">К этому дню Тень разложит повторение, а сам экзамен появится на горизонте.</p>
-    <div class="lbl">${sub ? 'Добавить темы' : 'Темы'} · по одной в строке</div><textarea class="field" id="ttx" rows="7" placeholder="1. Пределы&#10;2. Производная&#10;3. Интеграл"></textarea>
-    <p class="sub" style="font-size:12.5px" id="tcnt">Можно вставить содержание курса целиком: номера и маркеры в начале строк уберутся сами.</p>`,
-    foot: `<button class="btn btn-primary btn-lg btn-block" id="tsave">Сохранить</button>${sub ? `<button class="btn btn-sm btn-danger" data-act="subj-del" data-k="${esc(sub.key)}">${ic('trash')}Удалить предмет</button>` : ''}`,
+    eyebrow: 'Память', title: sub ? esc(sub.name) : 'Что учить',
+    body: `<div class="seg full" id="tar"><button data-a="uni">Учёба</button><button data-a="self">Для себя</button></div><p class="sub" id="tarh" style="margin:8px 0 0;font-size:12.5px"></p>
+    <div class="lbl">Название</div><input class="field" id="tsub" list="tsl" value="${esc(sub ? (sub.topics[0].subject || '').trim() : '')}" autocomplete="off"><datalist id="tsl">${names.map(n => `<option value="${esc(n)}">`).join('')}</datalist>
+    <div class="lbl" id="tdl"></div><input class="field" type="date" id="tdue" value="${sub?.due || ''}" aria-label="Срок">
+    <p class="sub" style="font-size:12.5px;margin-top:6px" id="tdh"></p>
+    <div id="tpw"><div class="lbl">Новых тем в день</div><div class="seg full" id="tpace">${[1, 2, 3, 5].map(n => `<button data-p="${n}">${n}</button>`).join('')}</div></div>
+    <div class="lbl">${sub ? 'Добавить' : 'Что именно'} · по одной строке</div><textarea class="field" id="ttx" rows="7"></textarea>
+    <p class="sub" style="font-size:12.5px" id="tcnt"></p>`,
+    foot: `<button class="btn btn-primary btn-lg btn-block" id="tsave">Сохранить</button>${sub ? `<button class="btn btn-sm btn-danger" data-act="subj-del" data-k="${esc(sub.key)}">${ic('trash')}Удалить</button>` : ''}`,
   });
   const q = sel => s.querySelector(sel), have = () => (sub || memSubs().find(x => x.key === skey(q('#tsub').value)))?.topics.map(x => x.title) || [];
-  q('#ttx').addEventListener('input', () => { const n = parseTopics(q('#ttx').value, have()).length; q('#tcnt').textContent = n ? `Будет добавлено: ${nTopics(n)}` : 'Можно вставить содержание курса целиком: номера и маркеры в начале строк уберутся сами.'; });
+  const HINT = 'Можно вставить список целиком: номера и маркеры уберутся сами. Чтобы проверять себя по ответу, пиши «вопрос | ответ».';
+  function paint() {
+    const A = AREA[area];
+    s.querySelectorAll('#tar button').forEach(b => b.setAttribute('aria-pressed', b.dataset.a === area));
+    s.querySelectorAll('#tpace button').forEach(b => b.setAttribute('aria-pressed', +b.dataset.p === pace));
+    q('#tarh').textContent = A.head; q('#tdl').textContent = A.dl; q('#tsub').placeholder = A.ph; q('#ttx').placeholder = A.tx;
+    const due = q('#tdue').value;
+    q('#tdh').textContent = due ? (area === 'self' ? 'Тень разложит темы до этого дня, а срок появится на горизонте.' : 'К этому дню Тень разложит повторение, а экзамен появится на горизонте.') : (area === 'self' ? 'Без даты Тень вводит новые темы в твоём темпе и вовремя возвращает старые.' : 'Без даты Тень вводит по две новые темы в день.');
+    q('#tpw').style.display = !due ? '' : 'none';
+    const n = parseTopics(q('#ttx').value, have()).length;
+    q('#tcnt').textContent = n ? `Будет добавлено: ${nTopics(n)}` : HINT;
+  }
+  s.addEventListener('click', e => {
+    const a = e.target.closest('#tar button'); if (a) { area = a.dataset.a; paint(); return; }
+    const pb = e.target.closest('#tpace button'); if (pb) { pace = +pb.dataset.p; paint(); }
+  });
+  q('#ttx').addEventListener('input', paint); q('#tdue').addEventListener('change', paint); q('#tsub').addEventListener('input', paint);
   q('#tsave').addEventListener('click', () => {
-    const name = q('#tsub').value.trim(), due = q('#tdue').value || null, titles = parseTopics(q('#ttx').value, have());
-    if (!name) { toast('Напиши название предмета'); return; }
-    if (!sub && !titles.length && !memSubs().some(x => x.key === skey(name))) { toast('Добавь хотя бы одну тему'); return; }
+    const name = q('#tsub').value.trim(), due = q('#tdue').value || null, items = parseTopics(q('#ttx').value, have());
+    if (!name) { toast('Напиши название'); return; }
     const old = sub || memSubs().find(x => x.key === skey(name));
-    if (old && (old.name !== name || (old.due || null) !== due)) St.editSubject(old.name, name, due);
-    if (titles.length) St.addMany(titles.map(title => ({ kind: 'topic', title, subject: name, due, mem: null, key: '', source: 'manual' })));
-    if (due) St.ensureExam(name, due);
+    if (!sub && !items.length && !old) { toast('Добавь хотя бы одну тему'); return; }
+    if (old && (old.name !== name || (old.due || null) !== due || old.area !== area || old.pace !== pace)) St.editSubject(old.name, name, due, { area, pace });
+    if (items.length) St.addMany(items.map(t => ({ kind: 'topic', title: t.title, subject: name, due, area, pace, mem: null, key: t.key, source: 'manual' })));
+    if (due) St.ensureExam(name, due, area);
     sfx('add'); closeSheet(); ui.lmode = 'memory'; ui.enter = false;
     if (ui.view !== 'list') go('list', null, true); else render();
-    toast(titles.length ? `Добавлено: ${nTopics(titles.length)}` : 'Сохранено');
+    toast(items.length ? `Добавлено: ${nTopics(items.length)}` : 'Сохранено');
   });
+  paint();
   if (!sub) setTimeout(() => q('#tsub').focus(), 380);
 }
 function openTopic(id) {
   const x = St.get_(id); if (!x || x.kind !== 'topic') return;
   const r = Mem.rec(x.mem), due = Mem.dueAt(x.mem);
-  const status = r === null ? 'Ещё не повторялась. Проверь себя: расскажи тему вслух, не подглядывая.' : `Свежесть ${pc(r)}. ${r < Mem.FADE_AT ? 'Пора освежить.' : 'Следующее освежение ' + whenTs(due) + '.'}`;
+  const status = r === null ? 'Ещё не повторялась. Проверь себя: расскажи вслух, не подглядывая.' : `Свежесть ${pc(r)}. ${r < Mem.FADE_AT ? 'Пора освежить.' : 'Следующее освежение ' + whenTs(due) + '.'}`;
   const hist = ((x.mem && x.mem.h) || []).map(([ts, g]) => `<i class="hd g${g}" title="${esc(D.fmtShort(D.iso(new Date(ts))))}: ${Mem.GRADES[g][0]}"></i>`).join('');
   openSheet({
     eyebrow: esc(x.subject || 'Тема'), title: esc(x.title),
     body: `<p class="sub" style="margin:0">${status}</p>${hist ? `<div class="hist" aria-label="Оценки последних повторов">${hist}</div>` : ''}
-    <div class="lbl">Ключевое: по чему проверить себя</div><textarea class="field" id="tkey" rows="4" placeholder="Например: определение, три свойства, пример. Покажется после твоего ответа.">${esc(x.key || '')}</textarea>`,
+    <div class="lbl">Ответ или главное: по чему проверить себя</div><textarea class="field" id="tkey" rows="4" placeholder="Например: определение и пример. Для слова: перевод. Покажется после твоего ответа.">${esc(x.key || '')}</textarea>`,
     foot: `<button class="btn btn-primary" data-act="topic-check" data-id="${x.id}">Проверить себя</button><button class="btn btn-ghost" data-act="topic-save" data-id="${x.id}">Сохранить</button><button class="btn btn-sm btn-danger" data-act="del" data-id="${x.id}">${ic('trash')}Удалить</button>`,
   });
 }
@@ -291,8 +322,8 @@ function paintReview() {
   }
   const x = St.get_(rv.q[rv.i]); if (!x) { rv.i++; return paintReview(); }
   setHead(`${x.subject || 'Тема'} · ${rv.i + 1} из ${rv.q.length}`, x.title);
-  body.innerHTML = `<div class="rv-card"><p class="rv-q">Расскажи тему вслух или набросай по памяти, как будто объясняешь первокурснику. Без подсказок.</p>
-    ${x.key ? (rv.show ? `<div class="rv-key"><span class="lbl" style="margin-top:0">Ключевое</span>${esc(x.key)}</div>` : `<button class="btn btn-ghost btn-sm" data-act="rv-key">Показать ключевое</button>`) : ''}
+  body.innerHTML = `<div class="rv-card"><p class="rv-q">Расскажи вслух или набросай по памяти, как будто объясняешь новичку. Без подсказок.</p>
+    ${x.key ? (rv.show ? `<div class="rv-key"><span class="lbl" style="margin-top:0">Ответ</span>${esc(x.key)}</div>` : `<button class="btn btn-ghost btn-sm" data-act="rv-key">Показать ответ</button>`) : ''}
     <div class="rv-dots" aria-hidden="true">${rv.q.map((_, k) => `<i class="${k < rv.i ? 'd' : k === rv.i ? 'c' : ''}"></i>`).join('')}</div></div>`;
   foot.innerHTML = Mem.GRADES.map(([l, g]) => `<button class="btn ${g === 2 ? 'btn-primary' : g === 0 ? 'btn-ghost' : ''}" data-act="rv-g" data-g="${g}">${l}</button>`).join('');
 }
@@ -322,8 +353,8 @@ const accSummary = () => { const a = Auth.acc(); return a ? `${esc(a.email)} · 
 function vAccount() {
   const a = Auth.acc(), st = Auth.status;
   return `${backHead('Аккаунт')}<div class="panel"><div class="h2">Почта</div><div style="font-size:16px;font-weight:600;margin-top:6px;word-break:break-all">${esc(a ? a.email : '')}</div><p class="sub" style="margin-top:10px">${syncLine()}</p>${st.state === 'err' && st.err ? `<p class="acc-err" style="margin-top:8px">${esc(st.err)}</p>` : ''}</div>
-  <div class="panel mlist" style="margin-top:12px">${mrow('upload', 'Синхронизировать сейчас', 'Дела уйдут в облако, чужие изменения придут', 'sync')}${mrow('shield', 'Сменить пароль', 'Пришлём письмо со ссылкой', 'acc-pass')}${mrow('close', 'Выйти', 'Дела на этом телефоне останутся, но вход понадобится снова', 'acc-out')}</div>
-  <p class="sub" style="font-size:12.5px;margin-top:14px">Один аккаунт на «Тень» и «Подход». Дела «Тени» лежат в личном разделе аккаунта, партнёры «Подхода» их не видят.</p>`;
+  <div class="panel mlist" style="margin-top:12px">${mrow('upload', 'Синхронизировать сейчас', 'Дела и темы уйдут в облако, чужие изменения придут', 'sync')}${mrow('db', 'Что лежит в облаке', 'Проверить, сколько дел и тем там уже есть', 'cloud-check')}${mrow('shield', 'Сменить пароль', 'Пришлём письмо со ссылкой', 'acc-pass')}${mrow('close', 'Выйти', 'Дела на этом телефоне останутся, но вход понадобится снова', 'acc-out')}</div>
+  <p class="sub" style="font-size:12.5px;margin-top:14px">Один аккаунт на «Тень» и «Подход». Дела, темы и история повторов лежат в личном разделе аккаунта, партнёры «Подхода» их не видят. Тема, звуки и ключ ИИ остаются только на этом телефоне.</p>`;
 }
 
 const previewSvg = '<svg viewBox="0 0 160 92" aria-hidden="true"><circle cx="80" cy="46" r="15" class="ring"/><circle cx="80" cy="46" r="28" class="ring"/><circle cx="80" cy="46" r="42" class="ring"/><path d="M62 58L42 73" style="stroke:var(--bad)" stroke-width="3" stroke-linecap="round" opacity=".6"/><circle cx="62" cy="58" r="4.5" style="fill:var(--bad)"/><circle cx="98" cy="34" r="4" style="fill:var(--gold)"/><circle cx="112" cy="58" r="3.6" style="fill:var(--ink)"/><circle cx="52" cy="22" r="3.6" style="fill:var(--steel)"/><circle cx="80" cy="46" r="2.6" style="fill:var(--ink)"/></svg>';
@@ -577,10 +608,25 @@ function openAI() {
 function openNews() {
   St.setMeta({ seen: APP_VERSION });
   openSheet({ eyebrow: `Версия ${APP_VERSION}`, title: 'Что нового', body: `<ol class="steps">
-    <li><span><b>Память.</b> Выпиши темы к экзамену, и Тень покажет, что тускнеет в голове и что успеешь к дню экзамена. Проверка себя занимает минуту.</span></li>
-    <li><span><b>План повторения сам.</b> Сначала то, что вот-вот забудется, потом новое: по чуть-чуть каждый день вместо ночи перед экзаменом.</span></li>
-    <li><span><b>Готово без таймера.</b> У быстрого дела одна кнопка. Таймер остался только у больших дел и выключается в настройках.</span></li>
-    <li><span><b>Вход и синхронизация.</b> Одна почта с «Подходом», дела и темы одинаковые на iPhone и Android.</span></li></ol>`, foot: '<button class="btn btn-primary btn-lg btn-block" data-act="close">Понятно</button>' });
+    <li><span><b>Память не только для колледжа.</b> Направление бывает «Учёба» (с экзаменом) или «Для себя»: язык, программирование, книга. Без даты Тень вводит новые темы в твоём темпе.</span></li>
+    <li><span><b>Карточки «вопрос | ответ».</b> Для слов и терминов: ответ показывается только после твоей попытки вспомнить.</span></li>
+    <li><span><b>Видно, что в облаке.</b> «Ещё → Аккаунт → Что лежит в облаке» читает облако заново и сверяет с телефоном: дела, темы, повторы.</span></li>
+    <li><span><b>Готово без таймера.</b> У быстрого дела одна кнопка, таймер только у больших дел.</span></li></ol>`, foot: '<button class="btn btn-primary btn-lg btn-block" data-act="close">Понятно</button>' });
+}
+function openCloud(c) {
+  const mine = { tasks: St.items().filter(x => x.kind === 'task').length, notes: St.items().filter(x => x.kind === 'note').length, topics: St.items().filter(x => x.kind === 'topic').length, reviews: St.items().filter(x => x.kind === 'topic').reduce((n, x) => n + (x.mem && x.mem.n ? x.mem.n : 0), 0) };
+  const row = (l, a, b) => `<div class="snap"><div><b>${l}</b></div><span class="rv-d">в облаке <b>${a}</b> · здесь <b>${b}</b></span></div>`;
+  let body;
+  if (c.empty) body = '<p class="sub" style="margin:0">В облаке пока ничего нет. Нажми «Синхронизировать сейчас»: всё, что на этом телефоне, уйдёт туда.</p>';
+  else if (c.bad) body = '<p class="sub" style="margin:0">Документ в облаке не читается. Нажми «Синхронизировать сейчас»: он перезапишется данными с этого телефона.</p>';
+  else {
+    const same = c.tasks === mine.tasks && c.notes === mine.notes && c.topics === mine.topics && c.reviews === mine.reviews;
+    body = `<div class="chips" style="margin-bottom:6px">${same ? '<span class="chip ok">Совпадает с телефоном</span>' : St.meta().dirty ? '<span class="chip warn">На телефоне есть неотправленное</span>' : '<span class="chip warn">Отличается от телефона: синхронизируй</span>'}</div>
+    ${row('Дела (и экзамены)', c.tasks, mine.tasks)}${row('Темы', c.topics, mine.topics)}${row('Повторов записано', c.reviews, mine.reviews)}${row('Заметки', c.notes, mine.notes)}
+    <div class="snap"><div><b>Размер</b><small>лимит облака около ${Math.round(Auth.LIMIT / 1000)} КБ</small></div><span class="rv-d"><b>${Math.max(1, Math.round(c.bytes / 1000))} КБ</b></span></div>
+    <div class="snap"><div><b>Последняя запись</b></div><span class="rv-d"><b>${c.t ? `${D.fmtShort(D.iso(new Date(c.t)))} ${hhmm(c.t)}` : '—'}</b></span></div>`;
+  }
+  openSheet({ eyebrow: 'Облако', title: 'Что в облаке', body: `${body}<p class="sub" style="font-size:12.5px;margin-top:12px">Это прямой запрос к облаку, а не память телефона. Тема, звуки и ключ ИИ в облако не уходят.</p>`, foot: '<button class="btn btn-primary btn-block" data-act="close">Понятно</button>' });
 }
 function openSnaps() {
   const list = St.snaps().slice().reverse();
@@ -680,6 +726,7 @@ const H = {
   wipe: () => { if (confirm('Удалить все дела? Они исчезнут и из облака на всех ваших телефонах. Копии на телефоне останутся.')) { St.snapNow(true); St.clearAll(); render(); toast('Всё удалено'); } },
   news: () => openNews(),
   sync: async () => { toast('Синхронизирую…'); await Auth.syncNow(); toast(Auth.status.state === 'ok' ? 'Синхронизировано' : (Auth.status.err || 'Нет сети')); },
+  'cloud-check': async () => { toast('Проверяю облако…'); try { openCloud(await Auth.cloudInfo()); } catch (e) { toast(e.code === 'net' ? 'Нет сети. Проверить облако пока нельзя' : F.errText(e)); } },
   'acc-pass': async () => { const a = Auth.acc(); if (!a) return; try { await Auth.resetMail(a.email); toast('Письмо отправлено'); } catch (e) { toast(F.errText(e)); } },
   'acc-out': () => { if (confirm('Выйти из аккаунта? Дела на телефоне останутся, но войти придётся заново.')) { Auth.signOut(); ensureGate(); } },
   ai: () => { sfx('tap'); openAI(); },
@@ -818,7 +865,10 @@ function ensureGate(link) {
   closeSheet(true);
   openGate({ link, onDone: () => { Auth.start(); render(); toast('Вход выполнен'); setTimeout(maybeNews, 900); } });
 }
-Auth.onChange(() => { if (!Auth.gateOk()) ensureGate(); else if (ui.view === 'more' && (!ui.sub || ui.sub === 'account')) { ui.enter = false; render(); } });
+let lastSyncErr = '';
+/** Ошибку облака показываем один раз, чтобы данные не копились на телефоне незаметно. */
+function syncErrToast() { const st = Auth.status; if (st.state === 'err' && st.err && st.err !== lastSyncErr) { lastSyncErr = st.err; toast(`Облако: ${st.err}`); } else if (st.state === 'ok') lastSyncErr = ''; }
+Auth.onChange(() => { syncErrToast(); if (!Auth.gateOk()) ensureGate(); else if (ui.view === 'more' && (!ui.sub || ui.sub === 'account')) { ui.enter = false; render(); } });
 Auth.onMerged(() => { if (!sheetEl()) { ui.enter = false; render(); } });
 
 syncSound(); buildTabs(); render();

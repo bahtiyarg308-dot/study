@@ -57,6 +57,9 @@ export const adoptOwner = () => { const a = acc(); if (a) St.setMeta({ owner: a.
 let busy = false, timer = null, poll = null;
 export const status = { state: 'idle', at: 0, err: '' };
 const path = a => `users/${a.uid}/pv/ten`;
+/** Размер в байтах: русские буквы занимают по два, а лимит документа в облаке считается именно в байтах. */
+const bytes = str => new TextEncoder().encode(str).length;
+export const LIMIT = 900000;
 
 export async function syncNow() {
   if (busy || !gateOk() || navigator.onLine === false) { if (navigator.onLine === false && gateOk()) { status.state = 'offline'; fire(); } return false; }
@@ -67,7 +70,7 @@ export async function syncNow() {
       const a = acc(), tok = await token(), doc = await F.docGet(tok, path(a));
       if (doc && doc.d) { let rem = null; try { rem = JSON.parse(doc.d); } catch (e) { /* облако пустое или повреждено */ } if (rem && St.mergeRemote(rem)) changed = true; }
       const json = JSON.stringify(St.payload());
-      if (json.length > 900000) throw { code: 'big' };
+      if (bytes(json) > LIMIT) throw { code: 'big' };
       if (doc && doc.d === json) break; // облако уже такое же
       try { await F.docSet(tok, path(a), { d: json, t: Date.now() }, doc ? doc.updateTime : null); break; }
       catch (e) { if (e.code === 'conflict' && tries < 3) continue; throw e; }
@@ -79,6 +82,15 @@ export async function syncNow() {
   } finally { busy = false; fire(); }
   if (changed) msubs.forEach(f => f());
   return changed;
+}
+/** Что прямо сейчас лежит в облаке (читаем документ заново, а не из памяти телефона). */
+export async function cloudInfo() {
+  const a = acc(); if (!a) throw { code: 'relogin' };
+  const doc = await F.docGet(await token(), path(a));
+  if (!doc || !doc.d) return { empty: true };
+  let rem; try { rem = JSON.parse(doc.d); } catch (e) { return { bad: true }; }
+  const it = Array.isArray(rem.items) ? rem.items : [], topics = it.filter(x => x.kind === 'topic');
+  return { bytes: bytes(doc.d), tasks: it.filter(x => x.kind === 'task').length, notes: it.filter(x => x.kind === 'note').length, topics: topics.length, reviews: topics.reduce((n, x) => n + (x.mem && x.mem.n ? x.mem.n : 0), 0), t: doc.t };
 }
 export function schedule(ms = 4000) { clearTimeout(timer); if (!gateOk()) return; timer = setTimeout(() => { syncNow(); }, ms); }
 export function start() {
