@@ -14,25 +14,25 @@ ul{list-style:none}
   --bg:#0D0E10;--surface:#16171A;--surface-2:#202226;--ink:#F1F1EE;--ink-2:#C4C5C1;--muted:#8E9095;--line:#26282D;--edge:#060607;
   --accent:var(--acc-d);--accent-ink:var(--acc-ink-d);--accent-soft:color-mix(in oklab,var(--accent) 20%,var(--surface));
   --gold:#FFC93C;--gold-soft:#3A2F10;--good:#3DD68C;--good-soft:#10291C;--bad:#FF6B6B;--bad-soft:#3A1718;--on-bad:#1A0707;--steel:#8DA6C4;
-  --scrim:rgba(0,0,0,.6);--shadow:0 12px 32px rgba(0,0,0,.45);--knob:#fff;
+  --scrim:rgba(0,0,0,.6);--shadow:0 12px 32px rgba(0,0,0,.45);--knob:#fff;--h0:#23252A;
 }
 [data-theme=light]{
   color-scheme:light;
   --bg:#EFEFEC;--surface:#FFFFFF;--surface-2:#E7E7E3;--ink:#121212;--ink-2:#3A3A38;--muted:#646468;--line:#DCDCD7;--edge:#C9C9C3;
   --accent:var(--acc-l);--accent-ink:var(--acc-ink-l);--accent-soft:color-mix(in oklab,var(--accent) 15%,var(--surface));
   --gold:#9A7300;--gold-soft:#FBF0C8;--good:#13865A;--good-soft:#DAF1E4;--bad:#C63434;--bad-soft:#F9E1E1;--on-bad:#FFFFFF;--steel:#4F6A8C;
-  --scrim:rgba(20,20,20,.38);--shadow:0 12px 30px rgba(20,20,20,.14);
+  --scrim:rgba(20,20,20,.38);--shadow:0 12px 30px rgba(20,20,20,.14);--h0:#E0E0DA;
 }
 /* «Мрак» и «Бумага»: тихий, почти монохромный вид */
 [data-look=noir][data-theme=dark]{
   --bg:#070708;--surface:#0E0E10;--surface-2:#151517;--line:#232326;--ink:#E9E7E2;--ink-2:#A9A7A2;--muted:#85847F;--edge:#030303;
   --gold:#B79F6B;--gold-soft:#241F14;--good:#86A683;--good-soft:#121A12;--bad:#C5605A;--bad-soft:#241211;--on-bad:#140808;--steel:#8DA6C4;
-  --shadow:0 14px 36px rgba(0,0,0,.65);--scrim:rgba(0,0,0,.74);
+  --shadow:0 14px 36px rgba(0,0,0,.65);--scrim:rgba(0,0,0,.74);--h0:#1A1A1C;
 }
 [data-look=noir][data-theme=light]{
   --bg:#E8E7E3;--surface:#F2F1ED;--surface-2:#DEDDD8;--line:#CBCAC4;--ink:#0F0F10;--ink-2:#38373A;--muted:#66666A;--edge:#C9C9C3;
   --gold:#80693A;--gold-soft:#EDE6D3;--good:#4C6E49;--good-soft:#E0E8DD;--bad:#9C3C37;--bad-soft:#F0DEDC;--on-bad:#FFFFFF;--steel:#4F6A8C;
-  --shadow:0 14px 34px rgba(20,20,20,.12);--scrim:rgba(10,10,10,.5);
+  --shadow:0 14px 34px rgba(20,20,20,.12);--scrim:rgba(10,10,10,.5);--h0:#DAD9D4;
 }
 :root{
   --f-display:"Oswald","Rubik",system-ui,sans-serif;
@@ -41,6 +41,7 @@ ul{list-style:none}
   --r:14px;--r-lg:18px;--spring:cubic-bezier(.22,1,.36,1);--out:cubic-bezier(.2,.8,.2,1);
   /* имена, которые использует радар и помощник */
   --hot:var(--bad);--warn:var(--gold);--ok:var(--good);--cool:var(--steel);
+  --h1:color-mix(in oklab,var(--accent) 28%,var(--h0));--h2:color-mix(in oklab,var(--accent) 52%,var(--h0));--h3:color-mix(in oklab,var(--accent) 76%,var(--h0));--h4:var(--accent);
 }
 [data-look=noir]{--r:10px;--r-lg:12px}
 
@@ -109,6 +110,7 @@ textarea.field{height:auto;min-height:78px;padding:10px 14px;resize:none;line-he
 .search .field{padding-left:40px;background:var(--surface)}
 .seg{display:inline-flex;flex-wrap:wrap;background:var(--surface-2);border-radius:14px;padding:3px;gap:2px}
 [data-look=noir] .seg{border-radius:11px}
+.seg.full{display:flex;width:100%}.seg.full button{flex:1;text-align:center}
 .seg button{padding:7px 12px;border-radius:11px;font-size:13px;font-weight:600;color:var(--ink-2);transition:background-color .25s,color .25s}
 [data-look=noir] .seg button{border-radius:8px}
 .seg button[aria-pressed=true]{background:var(--accent);color:var(--accent-ink)}
@@ -391,3 +393,26 @@ html[data-calm=true] *,html[data-calm=true] *::before,html[data-calm=true] *::af
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
 @media (pointer:coarse){input.field,select.field,textarea.field{font-size:16px}}
 @media (max-width:360px){.tab{font-size:9.5px}.tab .ic{width:21px;height:21px}.h1{font-size:26px}}
+
+/* ───────── активность: карта за 12 недель ───────── */
+.heatp{padding:16px 14px 14px}
+.heat{display:grid;grid-template-columns:20px repeat(12,minmax(0,1fr));gap:4px;margin-top:14px}
+.hm,.hl{font:500 8.5px/1 var(--f-mono);color:var(--muted);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap}
+.hm{align-self:end;padding-bottom:1px}
+.hl{align-self:center}
+.hc{aspect-ratio:1;border-radius:5px;background:var(--h0);transition:transform .2s var(--spring);animation:pop-in .45s var(--out) both;animation-delay:calc(var(--i,0) * 5ms)}
+[data-look=noir] .hc{border-radius:4px}
+.hc.l1{background:var(--h1)}.hc.l2{background:var(--h2)}.hc.l3{background:var(--h3)}.hc.l4{background:var(--h4)}
+.hc.f{background:transparent;box-shadow:inset 0 0 0 1px var(--line);opacity:.45;animation:none}
+.hc.today{box-shadow:0 0 0 1.5px var(--ink)}
+.hc:not(.f):active{transform:scale(.8)}
+@keyframes pop-in{from{opacity:0;transform:scale(.5)}}
+.hleg{display:flex;align-items:center;justify-content:flex-end;gap:5px;margin-top:12px;font:500 9px var(--f-mono);color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+.hleg i{display:block;width:11px;height:11px;border-radius:3px}
+.stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:12px}
+.stat{padding:12px 12px 11px}
+.stat b{display:block;font:600 26px/1 var(--f-display);letter-spacing:.01em;font-variant-numeric:tabular-nums}
+[data-look=noir] .stat b{font-weight:500}
+.stat span{display:block;font:500 9.5px/1.35 var(--f-mono);letter-spacing:.04em;text-transform:uppercase;color:var(--muted);margin-top:7px}
+.stat small{display:inline-block;font:500 11px var(--f-mono);color:var(--muted);margin-left:4px}
+.hnote{font-size:13px;color:var(--ink-2);margin:12px 4px 0}

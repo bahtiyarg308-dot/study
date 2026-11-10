@@ -138,6 +138,20 @@ export function loadDemo() {
   mk({ title: 'Зачёт по английскому', due: d(17), subject: 'Английский', est: 6 });
   mk({ title: 'Позвонить в деканат', due: d(1), time: '10:00', subject: 'Деканат' });
   mk({ kind: 'note', title: 'Шейдер: туман и rim light. Глянуть урок по PBR.', subject: 'Комп. графика' });
+  // история: сделанные дела за последние недели (для «Активность»)
+  let seed = 7; const rnd = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648;
+  const T = ['Конспект §', 'Лаба №', 'Задачи ', 'Отчёт №', 'Реферат: глава ', 'Статья ', 'Практика №'], SUB = ['История', 'Физика', 'Комп. графика', 'Английский', 'Деканат'];
+  for (let w = 0; w < 12; w++) {
+    for (let k = 0; k < 7; k++) {
+      if (w === 0 && k === 0) continue;
+      if (rnd() > (w < 2 ? .78 : w < 6 ? .55 : .4)) continue;
+      const day = d(-(w * 7 + k)), n = 1 + Math.floor(rnd() * (w < 3 ? 4 : 3));
+      for (let j = 0; j < n; j++) {
+        const late = rnd() < .16;
+        addItem({ title: T[Math.floor(rnd() * T.length)] + (1 + Math.floor(rnd() * 14)), due: late ? addDays(day, -3) : day, subject: SUB[Math.floor(rnd() * SUB.length)], done: true, doneAt: new Date(`${day}T${String(13 + j * 2).padStart(2, '0')}:20:00`).toISOString(), spent: rnd() < .2 ? 25 : 0 });
+      }
+    }
+  }
 }
 
 // ---- календарь (.ics) ----

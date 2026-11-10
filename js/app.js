@@ -6,7 +6,7 @@ import { sfx, buzz, cfg as sndCfg } from './sfx.js';
 import { $, $$, esc, ic, num, toast, openSheet, closeSheet, sheetEl, applyAppearance, THEMES, COLORS, NOIR_ACC, accOf, themeId } from './ui.js';
 
 const APP_VERSION = '2.0';
-const ui = { view: 'today', sub: null, filter: 'all', q: '', day: null, sel: null, enter: true, models: {} };
+const ui = { view: 'today', sub: null, filter: 'all', lmode: 'list', q: '', day: null, sel: null, enter: true, models: {} };
 const viewEl = $('#view'), tabsEl = $('#tabs');
 const today = () => D.todayISO();
 const when = it => it.due ? `${D.fmtDay(it.due)}${it.time ? ' · ' + it.time : ''}` : 'без срока';
@@ -113,6 +113,38 @@ function listBody() {
   else if (f === 'ideas') h = grp('Идеи', notes, true);
   return h || `<div class="empty"><p>${f === 'tails' ? 'Хвостов нет. Так держать.' : f === 'ideas' ? 'Идей пока нет. Начни запись со слова «идея:».' : f === 'day' ? 'На этот день сроков нет.' : 'Здесь пусто.'}</p></div>`;
 }
+/* ───────── «Активность»: карта за 12 недель ───────── */
+const doneDay = it => D.iso(new Date(it.doneAt));
+function activityBy() { const by = {}; St.items().filter(x => x.kind === 'task' && x.done && x.doneAt).forEach(x => { (by[doneDay(x)] ||= []).push(x); }); return by; }
+function vActivity() {
+  const t = today(), ws = D.addDays(t, -((D.dow(t) + 6) % 7)), start = D.addDays(ws, -77), by = activityBy();
+  const lvl = n => (n === 0 ? 0 : n === 1 ? 1 : n === 2 ? 2 : n <= 4 ? 3 : 4), MN = ['янв', 'фев', 'мар', 'апр', 'май', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
+  let cells = '', months = '', i = 0, total = 0, tails = 0, thisW = 0, lastW = 0;
+  for (let w = 0; w < 12; w++) {
+    const mon = D.addDays(start, w * 7), m = D.fromISO(mon).getMonth(), pm = w ? D.fromISO(D.addDays(start, (w - 1) * 7)).getMonth() : -1;
+    if (m !== pm) months += `<span class="hm" style="grid-column:${w + 2};grid-row:1">${MN[m]}</span>`;
+    for (let d = 0; d < 7; d++) {
+      const date = D.addDays(mon, d), list = by[date] || [], n = list.length, fut = date > t;
+      if (!fut) { total += n; list.forEach(x => { if (x.due && D.diffDays(x.due, date) > 0) tails++; }); if (date >= ws) thisW += n; else if (date >= D.addDays(ws, -7)) lastW += n; }
+      cells += `<button class="hc l${lvl(n)} ${fut ? 'f' : ''} ${date === t ? 'today' : ''}" style="grid-column:${w + 2};grid-row:${d + 2};--i:${i++}" data-act="hday" data-d="${date}" aria-label="${D.fmtDay(date)}: ${n} ${D.plural(n, ['дело', 'дела', 'дел'])}" ${fut ? 'disabled' : ''}></button>`;
+    }
+  }
+  const labels = ['пн', '', 'ср', '', 'пт', '', ''].map((l, k) => l ? `<span class="hl" style="grid-column:1;grid-row:${k + 2}">${l}</span>` : '').join('');
+  const focus = St.items().reduce((a, x) => a + (x.spent || 0), 0), diff = thisW - lastW;
+  return `<div class="panel heatp"><div class="h2">Активность · 12 недель</div><div class="heat">${months}${labels}${cells}</div>
+    <div class="hleg">меньше ${[0, 1, 2, 3, 4].map(l => `<i style="background:var(--h${l})"></i>`).join('')} больше</div></div>
+    <div class="stats"><div class="panel stat"><b>${total}</b><span>дел за 12 недель</span></div><div class="panel stat"><b>${thisW}</b><span>на этой неделе${lastW || diff ? `<small>${diff >= 0 ? '+' : '−'}${Math.abs(diff)}</small>` : ''}</span></div><div class="panel stat"><b>${tails}</b><span>хвостов закрыто</span></div></div>
+    <p class="hnote">${focus ? `В «Комнате» проведено ${D.fmtHours(focus / 60)}. ` : ''}Тап по дню покажет, что в него было сделано.${total ? '' : ' Сделанные дела будут закрашивать дни.'}</p>`;
+}
+function openDay(date) {
+  const list = (activityBy()[date] || []).slice().sort((a, b) => a.doneAt.localeCompare(b.doneAt));
+  if (!list.length) { toast(`${D.fmtDay(date)}: ничего не сделано`); return; }
+  openSheet({
+    eyebrow: 'Сделано', title: esc(D.fmtDay(date)),
+    body: list.map(x => { const late = x.due && D.diffDays(x.due, date) > 0, tm = new Date(x.doneAt); return `<div class="snap"><div><b>${esc(x.title)}</b><small>${String(tm.getHours()).padStart(2, '0')}:${String(tm.getMinutes()).padStart(2, '0')}${x.subject ? ' · ' + esc(x.subject) : ''}</small></div>${late ? '<span class="tag hot">хвост</span>' : ''}</div>`; }).join(''),
+    foot: '<button class="btn btn-primary btn-block" data-act="close">Понятно</button>',
+  });
+}
 function vList() {
   const all = St.items(), t = today();
   const open = all.filter(x => x.kind === 'task' && !x.done), tails = open.filter(x => St.isTail(x, t)).length;
@@ -120,7 +152,9 @@ function vList() {
   if (!all.length) return head + emptyState();
   const F = [['all', 'Все'], ['today', 'Сегодня'], ['tails', `Хвосты${tails ? ' ' + tails : ''}`], ['ideas', 'Идеи']];
   const chips = F.map(([k, l]) => `<button class="chip ${k === 'tails' ? 'hotf' : ''}" aria-pressed="${ui.filter === k}" data-act="filter" data-f="${k}">${l}</button>`).join('') + (ui.filter === 'day' ? `<button class="chip" aria-pressed="true" data-act="filter" data-f="all">${D.fmtShort(ui.day)} ${ic('close')}</button>` : '');
-  return head + `<div class="search">${ic('search')}<input class="field" id="qs" type="search" placeholder="Поиск: дело, предмет, заметка" value="${esc(ui.q)}" autocomplete="off"></div><div class="chips scroll fl">${chips}</div><div id="lres">${listBody()}</div>`;
+  const seg = `<div class="seg full" style="margin-bottom:14px"><button aria-pressed="${ui.lmode !== 'activity'}" data-act="lmode" data-m="list">Список</button><button aria-pressed="${ui.lmode === 'activity'}" data-act="lmode" data-m="activity">Активность</button></div>`;
+  if (ui.lmode === 'activity') return head + seg + vActivity();
+  return head + seg + `<div class="search">${ic('search')}<input class="field" id="qs" type="search" placeholder="Поиск: дело, предмет, заметка" value="${esc(ui.q)}" autocomplete="off"></div><div class="chips scroll fl">${chips}</div><div id="lres">${listBody()}</div>`;
 }
 
 /* ───────── «Ещё» ───────── */
@@ -431,9 +465,11 @@ const H = {
   'ics-all': () => { const l = St.items().filter(x => x.due && !x.done); l.length ? download('ten-сроки.ics', St.icsFor(l), 'text/calendar') : toast('Нет дел со сроками'); },
   selblip: el => { ui.sel = el.dataset.id; const pts = layout(St.items(), today()); $('#radar').innerHTML = radarHTML(pts, ui.sel); const sel = pts.find(p => p.it.id === ui.sel); const card = $('.sel-row'); if (sel && card) { card.dataset.id = sel.it.id; card.querySelector('b').textContent = sel.it.title; card.querySelector('.sub').textContent = `${when(sel.it)} · ${D.rel(sel.it.due, today())}`; } sfx('tap'); },
   filter: el => { ui.filter = el.dataset.f; if (ui.filter !== 'day') ui.day = null; ui.enter = false; render(); sfx('tap'); },
-  day: el => { ui.day = el.dataset.d; ui.filter = 'day'; go('list'); },
-  tails: () => { ui.filter = 'tails'; go('list'); },
-  tomorrow: () => { ui.filter = 'all'; go('list'); },
+  day: el => { ui.day = el.dataset.d; ui.filter = 'day'; ui.lmode = 'list'; go('list'); },
+  lmode: el => { ui.lmode = el.dataset.m; ui.enter = false; render(); sfx('tap'); },
+  hday: el => { sfx('tap'); openDay(el.dataset.d); },
+  tails: () => { ui.filter = 'tails'; ui.lmode = 'list'; go('list'); },
+  tomorrow: () => { ui.filter = 'all'; ui.lmode = 'list'; go('list'); },
   room: el => { const it = St.get_(el.dataset.id); if (it) openRoom({ id: it.id, minutes: it.stepMin || (St.isTail(it) ? 5 : 15), title: it.step || it.title, subject: it.subject || it.title }); },
   'room-free': () => openRoom({ minutes: 25, title: 'Свободный фокус' }),
   'room-pause': el => { const st = roomState; if (!st) return; st.run = !st.run; st.last = performance.now(); el.textContent = st.run ? 'Пауза' : 'Продолжить'; },
