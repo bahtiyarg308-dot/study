@@ -167,6 +167,20 @@ export function costRows(it, today = todayISO()) {
   return rows;
 }
 
+/** Облако почти заполнено (80% лимита): убираем самые старые выполненные дела. Старше 120 дней: карте активности нужны только 12 недель. Темы и открытые дела не трогаем. */
+export function trimOld(limit) {
+  const enc = new TextEncoder(), size = o => enc.encode(JSON.stringify(o)).length;
+  let total = size(payload());
+  if (total < limit * 0.8) return 0;
+  const cutoff = Date.now() - 120 * 864e5;
+  const old = S.items.filter(x => x.kind === 'task' && x.done && !x.exam && x.doneAt && Date.parse(x.doneAt) < cutoff).sort((a, b) => a.doneAt.localeCompare(b.doneAt));
+  const gone = new Set(); const now = Date.now();
+  for (const x of old) { if (total < limit * 0.7) break; total -= size(x) + 28; gone.add(x.id); }
+  if (!gone.size) return 0;
+  S.items = S.items.filter(x => !gone.has(x.id)); gone.forEach(id => { S.dead[id] = now; });
+  touch(); return gone.size;
+}
+
 // ---- экспорт / импорт ----
 export const exportJSON = () => JSON.stringify({ app: 'ten', exportedAt: new Date().toISOString(), data: { items: S.items, settings: { ...S.settings, ai: { ...S.settings.ai, keys: {} } } } }, null, 2);
 export function importJSON(text) {

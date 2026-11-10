@@ -69,6 +69,7 @@ export async function syncNow() {
     for (let tries = 0; tries < 4; tries++) {
       const a = acc(), tok = await token(), doc = await F.docGet(tok, path(a));
       if (doc && doc.d) { let rem = null; try { rem = JSON.parse(doc.d); } catch (e) { /* облако пустое или повреждено */ } if (rem && St.mergeRemote(rem)) changed = true; }
+      const cut = St.trimOld(LIMIT); if (cut) status.trimmed = (status.trimmed || 0) + cut;
       const json = JSON.stringify(St.payload());
       if (bytes(json) > LIMIT) throw { code: 'big' };
       if (doc && doc.d === json) break; // облако уже такое же

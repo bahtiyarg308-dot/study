@@ -62,11 +62,6 @@ function nowCard(it) {
     <p class="now-sub">${sub}${it.step ? `<br>Шаг: ${esc(it.step)}` : ''}</p>${tail ? '<div class="comet"></div>' : ''}
     <div class="btn-row"><button class="btn btn-primary btn-lg" data-act="done" data-id="${it.id}">${ic('check')}Готово</button>${timerOn(it) ? `<button class="btn btn-ghost" data-act="room" data-id="${it.id}" aria-label="Таймер на ${mins} минут">${ic('play')}${mins} мин</button>` : ''}</div></section>`;
 }
-function backupBanner() {
-  const m = St.meta(), n = St.items().length;
-  if (n < 3 || Date.now() < m.bannerHide || Date.now() - m.lastExport < 14 * 864e5) return '';
-  return `<div class="banner"><div class="banner-t">${ic('shield')}<span><b>Сохраните резервную копию.</b> Дела хранятся только на этом телефоне.</span></div><div class="banner-a"><button class="btn btn-sm" data-act="export">Сохранить</button><button class="icon-btn" data-act="hidebanner" aria-label="Скрыть" style="width:34px;height:34px">${ic('close')}</button></div></div>`;
-}
 function vToday() {
   const all = St.items(), t = today(), name = St.settings().name?.trim();
   const head = pageHead(dateLabel(), name ? `Привет, ${esc(name)}` : 'Сегодня', headActs(false));
@@ -82,7 +77,7 @@ function vToday() {
   if (rest.length) h += `<section class="sec"><div class="sec-head"><h2 class="h2">Дальше сегодня</h2><span class="h2">${rest.length}</span></div><div class="panel flush">${rest.slice(0, 5).map(x => swipeRow(taskRow(x, t), x.id)).join('')}</div></section>`;
   if (otherTails || tomorrow) h += `<div class="panel flush" style="margin-top:12px">${otherTails ? `<button class="mrow" data-act="tails"><span class="grow"><b>Ещё ${nTails(otherTails)}</b></span>${ic('chev', 'chev')}</button>` : ''}${tomorrow ? `<button class="mrow" data-act="tomorrow"><span class="grow"><b>Завтра: ${nTasks(tomorrow)}</b></span>${ic('chev', 'chev')}</button>` : ''}</div>`;
   h += `<div style="margin-top:14px"><button class="btn-add" data-act="add">${ic('plus')}Добавить дело</button></div>`;
-  return h + backupBanner();
+  return h;
 }
 
 /* ───────── «Горизонт» ───────── */
@@ -336,7 +331,7 @@ function vMore() {
   if (ui.sub === 'ai') return vAI();
   if (ui.sub === 'account') return vAccount();
   if (ui.sub === 'about') return vAbout();
-  return pageHead('Разделы и настройки', 'Ещё', '') + `<div class="panel mlist">${mrow('shield', 'Аккаунт', accSummary(), 'sub', 'data-s="account"')}${mrow('spark', 'ИИ-помощник', AI.ready() ? 'Подключён · ' + esc(AI.cur().model) : 'Подключить умного помощника', 'sub', 'data-s="ai"')}${mrow('moon', 'Комната', 'Фокус в темноте: таймер и больше ничего', 'room-free')}${mrow('theme', 'Оформление', `${THEMES[themeId()].name}, акцент, звуки`, 'sub', 'data-s="look"')}${mrow('db', 'Данные', 'Копии, перенос, календарь', 'sub', 'data-s="data"')}${mrow('info', 'О приложении', 'Установка и что нового', 'sub', 'data-s="about"')}</div>`;
+  return pageHead('Разделы и настройки', 'Ещё', '') + `<div class="panel mlist">${mrow('shield', 'Аккаунт', accSummary(), 'sub', 'data-s="account"')}${mrow('spark', 'ИИ-помощник', AI.ready() ? 'Подключён · ' + esc(AI.cur().model) : 'Подключить умного помощника', 'sub', 'data-s="ai"')}${mrow('theme', 'Оформление', `${THEMES[themeId()].name}, акцент, звуки`, 'sub', 'data-s="look"')}${mrow('db', 'Данные', 'Копии, перенос, календарь', 'sub', 'data-s="data"')}${mrow('info', 'О приложении', 'Установка и что нового', 'sub', 'data-s="about"')}</div>`;
 }
 
 /* ───────── аккаунт и синхронизация ───────── */
@@ -718,7 +713,6 @@ const H = {
   },
   demo: () => { if (St.items().length && !confirm('Добавить тестовые дела к твоим?')) return; St.loadDemo(); render(); toast('Пример добавлен. Удалить можно в «Данные».'); },
   export: () => { download(`ten-копия-${today()}.json`, St.exportJSON(), 'application/json'); St.setMeta({ lastExport: Date.now() }); render(); toast('Копия сохранена'); },
-  hidebanner: () => { St.setMeta({ bannerHide: Date.now() + 7 * 864e5 }); ui.enter = false; render(); },
   import: () => $('#file')?.click(),
   snaps: () => openSnaps(),
   'snap-now': () => { St.snapNow(true); openSnaps(); toast('Копия сделана'); },
@@ -859,15 +853,14 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden) { ti
 setInterval(tick, 60000);
 
 /* ───────── вход: приложение закрыто без подтверждённой почты ───────── */
-function maybeNews() { if (St.meta().seen !== APP_VERSION && !sheetEl() && !gateOpen()) openNews(); }
 function ensureGate(link) {
   if (Auth.gateOk() || gateOpen()) return;
   closeSheet(true);
-  openGate({ link, onDone: () => { Auth.start(); render(); toast('Вход выполнен'); setTimeout(maybeNews, 900); } });
+  openGate({ link, onDone: () => { Auth.start(); render(); toast('Вход выполнен'); } });
 }
 let lastSyncErr = '';
 /** Ошибку облака показываем один раз, чтобы данные не копились на телефоне незаметно. */
-function syncErrToast() { const st = Auth.status; if (st.state === 'err' && st.err && st.err !== lastSyncErr) { lastSyncErr = st.err; toast(`Облако: ${st.err}`); } else if (st.state === 'ok') lastSyncErr = ''; }
+function syncErrToast() { const st = Auth.status; if (st.trimmed) { toast(`Облако почти заполнено: убрал старые выполненные дела (${st.trimmed})`); st.trimmed = 0; } if (st.state === 'err' && st.err && st.err !== lastSyncErr) { lastSyncErr = st.err; toast(`Облако: ${st.err}`); } else if (st.state === 'ok') lastSyncErr = ''; }
 Auth.onChange(() => { syncErrToast(); if (!Auth.gateOk()) ensureGate(); else if (ui.view === 'more' && (!ui.sub || ui.sub === 'account')) { ui.enter = false; render(); } });
 Auth.onMerged(() => { if (!sheetEl()) { ui.enter = false; render(); } });
 
@@ -876,5 +869,5 @@ const authLink = Auth.takeLink();
 if (authLink && authLink.mode === 'verifyEmail') F.applyOob(authLink.oob).then(() => toast('Почта подтверждена')).catch(e => toast(F.errText(e)));
 ensureGate(authLink);
 Auth.start();
-setTimeout(() => { St.snapNow(); maybeNews(); }, 1200);
+setTimeout(() => St.snapNow(), 1200);
 if ('serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('sw.js').catch(() => { });
