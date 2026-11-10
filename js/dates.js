@@ -107,7 +107,7 @@ export function parseQuick(raw, now = new Date()) {
   if (due && due < today) tail = true;
 
   let title = s.replace(/\s+/g, ' ').trim().replace(/^[\s,.;:—-]+|[\s,.;:—-]+$/g, '');
-  if ((m = title.match(/^(идея|заметка|мысль|запомнить)\s*[:—-]?\s*/i))) { kind = 'note'; title = title.slice(m[0].length); }
+  if ((m = title.match(/^(идея|заметка|мысль|запомнить)\s*[:—-]?\s*/i))) { title = title.slice(m[0].length); }
   for (const [re, to] of FIX) title = title.replace(re, to);
   title = title.replace(/\s+[—-]\s+(?:надо|нужно|а|и)\s.*$/i, '').trim();
   if (title) title = title[0].toUpperCase() + title.slice(1);

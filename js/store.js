@@ -11,7 +11,9 @@ const DEFAULTS = () => ({
   settings: { theme: 'mrak', auto: false, calm: false, memSec: 90, accent: 'lime', noirAcc: 'bone', name: '', snd: { on: true, vol: 2 }, ai: { provider: 'gemini', keys: {}, models: {}, base: '', sees: { tasks: true, notes: true, priv: false } } },
 });
 
+let migratedOnLoad = false;
 let S = load();
+if (migratedOnLoad) { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { /* приватный режим */ } } // перенос заметок в дела сохраняем сразу
 const subs = new Set();
 let timer = null;
 
@@ -22,7 +24,9 @@ function load() {
       const d = JSON.parse(raw), base = DEFAULTS();
       const items = Array.isArray(d.items) ? d.items : [];
       items.forEach(x => { if (!x.u) x.u = Date.parse(x.doneAt || x.createdAt) || Date.now(); }); // отметка изменения нужна для синхронизации
-      return { ...base, ...d, dead: d.dead && typeof d.dead === 'object' ? d.dead : {}, meta: { ...base.meta, ...(d.meta || {}) }, settings: { ...base.settings, ...(d.settings || {}), ai: { ...base.settings.ai, ...((d.settings || {}).ai || {}) } }, items };
+      let migrated = false;                                                                          // «заметка» и «дело» — одно и то же: заметка становится делом без срока
+      items.forEach(x => { if (x.kind === 'note') { x.kind = 'task'; x.u = Date.now(); migrated = migratedOnLoad = true; } });
+      return { ...base, ...d, dead: d.dead && typeof d.dead === 'object' ? d.dead : {}, meta: { ...base.meta, ...(d.meta || {}), ...(migrated ? { dirty: Date.now() } : {}) }, settings: { ...base.settings, ...(d.settings || {}), ai: { ...base.settings.ai, ...((d.settings || {}).ai || {}) } }, items };
     }
   } catch (e) { /* пустое хранилище */ }
   return DEFAULTS();
@@ -188,7 +192,7 @@ export function importJSON(text) {
   if (!Array.isArray(d.items)) throw new Error('В файле нет списка дел');
   const ids = new Set(S.items.map(x => x.id));
   let n = 0;
-  for (const it of d.items) if (it && it.title && !ids.has(it.id)) { S.items.push({ kind: 'task', due: null, time: null, done: false, doneAt: null, createdAt: new Date().toISOString(), subject: '', est: null, step: '', stepMin: null, remind: null, source: 'manual', priv: false, spent: 0, ...it, id: it.id || uid(), u: Date.now() }); delete S.dead[it.id]; n++; }
+  for (const it of d.items) if (it && it.title && !ids.has(it.id)) { S.items.push({ kind: 'task', due: null, time: null, done: false, doneAt: null, createdAt: new Date().toISOString(), subject: '', est: null, step: '', stepMin: null, remind: null, source: 'manual', priv: false, spent: 0, ...it, kind: it.kind === 'note' ? 'task' : (it.kind || 'task'), id: it.id || uid(), u: Date.now() }); delete S.dead[it.id]; n++; }
   touch(); return n;
 }
 export function clearAll() { const now = Date.now(); S.items.forEach(x => { S.dead[x.id] = now; }); S.items = []; touch(); }
@@ -204,6 +208,7 @@ export function mergeRemote(rem) {
   const mine = new Map(S.items.map(x => [x.id, x]));
   for (const r of rem.items || []) {
     if (!r || !r.id || !r.title) continue;
+    if (r.kind === 'note') r.kind = 'task'; // телефон со старой версией ещё присылает заметки
     const dead = S.dead[r.id] || 0, l = mine.get(r.id);
     if (dead && dead >= (r.u || 0)) continue;
     if (!l) { S.items.push(r); changed = true; }
@@ -239,7 +244,7 @@ export function loadDemo() {
   addMany([...eng.map(([title, mem]) => ({ kind: 'topic', title, subject: 'Английский', due: d(17), area: 'uni', mem, source: 'demo' })), ...phy.map(([title, mem]) => ({ kind: 'topic', title, subject: 'Физика', due: d(24), area: 'uni', mem, source: 'demo' })), ...py.map(([title, mem, key]) => ({ kind: 'topic', title, subject: 'Python для себя', due: null, area: 'self', pace: 2, mem, key: key || '', source: 'demo' }))]);
   addItem({ title: 'Экзамен: Физика', due: d(24), subject: 'Физика', exam: true, source: 'memory' });
   mk({ title: 'Позвонить в деканат', due: d(1), time: '10:00', subject: 'Деканат' });
-  mk({ kind: 'note', title: 'Шейдер: туман и rim light. Глянуть урок по PBR.', subject: 'Комп. графика' });
+  mk({ title: 'Шейдер: туман и rim light. Глянуть урок по PBR.', subject: 'Комп. графика' });
   // история: сделанные дела за последние недели (для «Активность»)
   let seed = 7; const rnd = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648;
   const T = ['Конспект §', 'Лаба №', 'Задачи ', 'Отчёт №', 'Реферат: глава ', 'Статья ', 'Практика №'], SUB = ['История', 'Физика', 'Комп. графика', 'Английский', 'Деканат'];

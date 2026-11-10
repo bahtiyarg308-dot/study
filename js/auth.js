@@ -91,7 +91,7 @@ export async function cloudInfo() {
   if (!doc || !doc.d) return { empty: true };
   let rem; try { rem = JSON.parse(doc.d); } catch (e) { return { bad: true }; }
   const it = Array.isArray(rem.items) ? rem.items : [], topics = it.filter(x => x.kind === 'topic');
-  return { bytes: bytes(doc.d), tasks: it.filter(x => x.kind === 'task').length, notes: it.filter(x => x.kind === 'note').length, topics: topics.length, reviews: topics.reduce((n, x) => n + (x.mem && x.mem.n ? x.mem.n : 0), 0), t: doc.t };
+  return { bytes: bytes(doc.d), tasks: it.filter(x => x.kind === 'task' || x.kind === 'note').length, topics: topics.length, reviews: topics.reduce((n, x) => n + (x.mem && x.mem.n ? x.mem.n : 0), 0), t: doc.t };
 }
 export function schedule(ms = 4000) { clearTimeout(timer); if (!gateOk()) return; timer = setTimeout(() => { syncNow(); }, ms); }
 export function start() {

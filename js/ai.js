@@ -57,15 +57,14 @@ export function snapshot() {
   const vis = St.items().filter(it => a.priv || !it.priv);
   const tasks = a.tasks ? vis.filter(i => i.kind === 'task').sort((x, y) => (x.done - y.done) || (x.due || '9').localeCompare(y.due || '9')).slice(0, 80)
     .map(i => ({ id: i.id, title: i.title, due: i.due, time: i.time, done: i.done, tail: St.isTail(i, t), daysLeft: i.due ? D.diffDays(t, i.due) : null, subject: i.subject || undefined, estHours: i.est || undefined, firstStep: i.step || undefined })) : [];
-  const notes = a.notes ? vis.filter(i => i.kind === 'note').slice(0, 40).map(i => ({ id: i.id, title: i.title, subject: i.subject || undefined })) : [];
   // память: темы к экзаменам и то, насколько они свежи (шанс вспомнить сейчас, %)
   const memory = a.tasks ? Mem.subjects(vis).map(s => { const st = Mem.stats(s); return { subject: s.name, type: s.area === 'self' ? 'для себя' : 'учёба', ...(s.due ? {} : { newTopicsPerDay: s.pace }), exam: s.due || undefined, daysLeft: s.due ? D.diffDays(t, s.due) : undefined, freshNowPct: Math.round(st.now * 100), freshAtExamPct: st.exam === null ? undefined : Math.round(st.exam * 100), notStarted: st.fresh, fading: st.fade, topics: s.topics.slice(0, 40).map(x => { const r = Mem.rec(x.mem); return { title: x.title, freshPct: r === null ? null : Math.round(r * 100) }; }) }; }).slice(0, 12) : [];
-  return { today: t, weekday: D.WD[D.dow(t)], tasks, notes, ...(memory.length ? { memory } : {}) };
+  return { today: t, weekday: D.WD[D.dow(t)], tasks, ...(memory.length ? { memory } : {}) };
 }
 export function counts() {
   const a = cfg().sees, t = D.todayISO(), vis = St.items().filter(it => a.priv || !it.priv);
   const open = a.tasks ? vis.filter(i => i.kind === 'task' && !i.done) : [];
-  return { tasks: open.length, tails: open.filter(i => St.isTail(i, t)).length, notes: a.notes ? vis.filter(i => i.kind === 'note').length : 0 };
+  return { tasks: open.length, tails: open.filter(i => St.isTail(i, t)).length };
 }
 
 const SYS = `Ты — помощник в приложении-планировщике «Тень». Отвечай по-русски, коротко и по делу (до 4 предложений), без вступлений и воды.
@@ -74,8 +73,8 @@ memory — темы для запоминания: учёба (type «учёба
 Горизонт (радар): чем меньше дней до срока, тем ближе дело к центру. «Хвост» — просроченное дело (tail=true): его надо закрывать в первую очередь, самый дешёвый — первым.
 Если пользователь просит добавить, перенести, отметить сделанным или удалить дело — верни это в actions; применяет их сам пользователь после подтверждения.
 Формат ответа — СТРОГО один JSON без текста вне него:
-{"reply":"текст ответа","actions":[{"type":"add","title":"…","due":"YYYY-MM-DD","time":"HH:MM","estHours":3,"subject":"…","kind":"task"},{"type":"done","id":"…"},{"type":"move","id":"…","due":"YYYY-MM-DD","time":"HH:MM"},{"type":"delete","id":"…"}]}
-Поля due, time, estHours, subject, kind необязательны. Если действий нет — "actions":[]. Даты считай от сегодняшней. kind: "task" или "note".`;
+{"reply":"текст ответа","actions":[{"type":"add","title":"…","due":"YYYY-MM-DD","time":"HH:MM","estHours":3,"subject":"…"},{"type":"done","id":"…"},{"type":"move","id":"…","due":"YYYY-MM-DD","time":"HH:MM"},{"type":"delete","id":"…"}]}
+Поля due, time, estHours, subject необязательны. Если действий нет — "actions":[]. Даты считай от сегодняшней.`;
 
 function parse(text) {
   let s = String(text || '').trim().replace(/^```(?:json)?\s*|\s*```$/g, '');
@@ -118,7 +117,7 @@ export function cleanActions(list) {
   for (const x of list.slice(0, 12)) {
     if (!x || typeof x !== 'object') continue;
     if (x.type === 'add' && typeof x.title === 'string' && x.title.trim()) {
-      const kind = x.kind === 'note' ? 'note' : 'task';
+      const kind = 'task';
       out.push({ type: 'add', title: x.title.trim().slice(0, 200), kind, due: kind === 'task' && isDate(x.due) ? x.due : null, time: kind === 'task' && isTime(x.time) ? x.time : null, est: Number(x.estHours) > 0 ? Number(x.estHours) : null, subject: typeof x.subject === 'string' ? x.subject.slice(0, 60) : '' });
     } else if (['done', 'move', 'delete'].includes(x.type) && St.get_(x.id)) {
       const a = { type: x.type, id: x.id };

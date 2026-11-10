@@ -41,7 +41,6 @@ function taskRow(it, t) {
   return `<div class="jr ${it.done ? 'dn' : ''}">${dcol}<button class="jr-b" data-act="open" data-id="${it.id}"><b><span>${esc(it.title)}</span>${tail ? '<i class="tag hot" style="font-style:normal">хвост</i>' : ''}</b>${sub ? `<small>${sub}</small>` : ''}</button>
   <button class="ck ${it.done ? 'd' : ''}" data-act="toggle" data-id="${it.id}" aria-label="${it.done ? 'Вернуть в дела' : 'Отметить сделанным'}">${ic('check')}</button></div>`;
 }
-const noteRow = n => `<button class="note-r" data-act="open" data-id="${n.id}"><div class="meta"><span class="tag">${esc(n.subject || 'заметка')}</span><span class="h2">${D.fmtShort(D.iso(new Date(n.createdAt)))}</span></div>${esc(n.title)}</button>`;
 
 /* ───────── «Сегодня» ───────── */
 function weekStrip(t) {
@@ -97,24 +96,24 @@ function vHorizon() {
 /* ───────── «Дела» ───────── */
 function listBody() {
   const t = today(), all = St.items(), q = ui.q.trim().toLowerCase();
-  const grp = (title, arr, note) => arr.length ? `<section class="sec"><div class="sec-head"><h2 class="h2">${title}</h2><span class="h2">${arr.length}</span></div><div class="panel flush">${arr.map(x => swipeRow(note ? noteRow(x) : taskRow(x, t), x.id)).join('')}</div></section>` : '';
+  const grp = (title, arr) => arr.length ? `<section class="sec"><div class="sec-head"><h2 class="h2">${title}</h2><span class="h2">${arr.length}</span></div><div class="panel flush">${arr.map(x => swipeRow(taskRow(x, t), x.id)).join('')}</div></section>` : '';
   const tm = D.addDays(t, 1), byTime = (a, b) => (a.time || '99').localeCompare(b.time || '99');
   if (q) {
     const hit = all.filter(x => (x.title + ' ' + (x.subject || '') + ' ' + (x.step || '')).toLowerCase().includes(q));
-    return grp(`Найдено`, hit.filter(x => x.kind === 'task').sort((a, b) => (a.due || '9').localeCompare(b.due || '9')), false) + grp('Заметки', hit.filter(x => x.kind === 'note'), true) || '<div class="empty"><p>Ничего не нашлось.</p></div>';
+    return grp(`Найдено`, hit.filter(x => x.kind === 'task').sort((a, b) => (a.due || '9').localeCompare(b.due || '9'))) || '<div class="empty"><p>Ничего не нашлось.</p></div>';
   }
-  const tasks = all.filter(x => x.kind === 'task' && !x.done), notes = all.filter(x => x.kind === 'note');
+  const tasks = all.filter(x => x.kind === 'task' && !x.done);
   const tails = tasks.filter(x => St.isTail(x, t)).sort((a, b) => a.due.localeCompare(b.due));
   const todays = tasks.filter(x => x.due === t).sort(byTime), tomorrow = tasks.filter(x => x.due === tm).sort(byTime);
   const later = tasks.filter(x => x.due && x.due > tm).sort((a, b) => a.due.localeCompare(b.due)), nodue = tasks.filter(x => !x.due);
   const done = all.filter(x => x.kind === 'task' && x.done).sort((a, b) => (b.doneAt || '').localeCompare(a.doneAt || '')).slice(0, 6);
   const f = ui.filter; let h = '';
   if (f === 'day') h = grp(D.fmtDay(ui.day), tasks.filter(x => x.due === ui.day).sort(byTime), false);
-  else if (f === 'all') h = grp('Хвосты', tails) + grp(`Сегодня · ${D.fmtShort(t)}`, todays) + grp(`Завтра · ${D.fmtShort(tm)}`, tomorrow) + grp('Позже', later) + grp('Без срока', nodue) + grp('Идеи', notes, true) + grp('Сделано', done);
+  else if (f === 'all') h = grp('Хвосты', tails) + grp(`Сегодня · ${D.fmtShort(t)}`, todays) + grp(`Завтра · ${D.fmtShort(tm)}`, tomorrow) + grp('Позже', later) + grp('Без срока', nodue) + grp('Сделано', done);
   else if (f === 'today') h = grp('Хвосты', tails) + grp('Сегодня', todays) + grp('Сделано', done);
   else if (f === 'tails') h = grp('Хвосты', tails);
-  else if (f === 'ideas') h = grp('Идеи', notes, true);
-  return h || `<div class="empty"><p>${f === 'tails' ? 'Хвостов нет. Так держать.' : f === 'ideas' ? 'Идей пока нет. Начни запись со слова «идея:».' : f === 'day' ? 'На этот день сроков нет.' : 'Здесь пусто.'}</p></div>`;
+  else if (f === 'nodue') h = grp('Без срока', nodue);
+  return h || `<div class="empty"><p>${f === 'tails' ? 'Хвостов нет. Так держать.' : f === 'nodue' ? 'Дел без срока нет.' : f === 'day' ? 'На этот день сроков нет.' : 'Здесь пусто.'}</p></div>`;
 }
 /* ───────── «Активность»: карта за 12 недель ───────── */
 const doneDay = it => D.iso(new Date(it.doneAt));
@@ -154,10 +153,10 @@ function vList() {
   const head = pageHead(`${open.length} открыто`, 'Дела', headActs(true));
   const seg = `<div class="seg full" style="margin-bottom:14px"><button aria-pressed="${ui.lmode !== 'activity'}" data-act="lmode" data-m="list">Список</button><button aria-pressed="${ui.lmode === 'activity'}" data-act="lmode" data-m="activity">Активность</button></div>`;
   if (!all.length) return head + emptyState();
-  const F = [['all', 'Все'], ['today', 'Сегодня'], ['tails', `Хвосты${tails ? ' ' + tails : ''}`], ['ideas', 'Идеи']];
+  const F = [['all', 'Все'], ['today', 'Сегодня'], ['tails', `Хвосты${tails ? ' ' + tails : ''}`], ['nodue', 'Без срока']];
   const chips = F.map(([k, l]) => `<button class="chip ${k === 'tails' ? 'hotf' : ''}" aria-pressed="${ui.filter === k}" data-act="filter" data-f="${k}">${l}</button>`).join('') + (ui.filter === 'day' ? `<button class="chip" aria-pressed="true" data-act="filter" data-f="all">${D.fmtShort(ui.day)} ${ic('close')}</button>` : '');
   if (ui.lmode === 'activity') return head + seg + vActivity();
-  return head + seg + `<div class="search">${ic('search')}<input class="field" id="qs" type="search" placeholder="Поиск: дело, предмет, заметка" value="${esc(ui.q)}" autocomplete="off"></div><div class="chips scroll fl">${chips}</div><div id="lres">${listBody()}</div>`;
+  return head + seg + `<div class="search">${ic('search')}<input class="field" id="qs" type="search" placeholder="Поиск: дело или предмет" value="${esc(ui.q)}" autocomplete="off"></div><div class="chips scroll fl">${chips}</div><div id="lres">${listBody()}</div>`;
 }
 
 /* ───────── «Память»: темы к экзаменам ───────── */
@@ -419,7 +418,7 @@ function vAI() {
   ${P[a.provider].keyUrl ? `<a class="link" style="display:inline-block;margin-top:10px;color:var(--ink-2);font-size:13.5px;text-decoration:underline;text-underline-offset:3px" href="${P[a.provider].keyUrl}" target="_blank" rel="noopener">Где взять ключ →</a>` : ''}
   <div class="lbl">Модель</div>${a.provider === 'custom' ? `<input class="field" id="amodel" placeholder="Название модели" value="${esc(c.model)}">` : `<div class="select"><select class="field" id="amodel">${models.length ? models.map(m => `<option ${m === c.model ? 'selected' : ''}>${esc(m)}</option>`).join('') : '<option value="">Сначала нажми «Проверить ключ»</option>'}</select></div>`}
   <div class="btn-row"><button class="btn btn-primary" data-act="ai-check" id="acheck">Проверить ключ</button></div><div id="astat" style="margin-top:10px;min-height:30px">${AI.ready() ? '<span class="chip ok">Подключён</span>' : ''}</div>
-  <div class="lbl">Что видит помощник</div><div class="panel mlist">${tog('tasks', 'Дела, сроки и хвосты', 'Основа для ответов')}${tog('notes', 'Заметки', 'Идеи и мысли')}${tog('priv', 'Личное', 'Дела и заметки с пометкой «Личное»')}</div>
+  <div class="lbl">Что видит помощник</div><div class="panel mlist">${tog('tasks', 'Дела, сроки и хвосты', 'Основа для ответов')}${tog('priv', 'Личное', 'Дела с пометкой «Личное»')}</div>
   <button class="btn btn-ghost btn-block" style="margin-top:12px" data-act="ai-ctx">${ic('eye')}Показать, что уйдёт помощнику</button>
   <p class="sub" style="font-size:12.5px;margin-top:12px">Бесплатные тарифы провайдеров могут использовать запросы для улучшения моделей, поэтому личное по умолчанию не отправляется. Помощник только предлагает, подтверждаешь ты.</p>`;
 }
@@ -466,8 +465,8 @@ function openEditor(id) {
   const ed = { kind: it?.kind || 'task', text: it?.title || '', due: it?.due || null, time: it?.time || null, tDue: !!it, tTime: !!it, parsed: [] };
   const fri = D.addDays(t, (5 - D.dow(t) + 7) % 7 || 7);
   const s = openSheet({
-    eyebrow: it ? 'Правка' : 'Быстрый ввод', title: it ? (it.kind === 'note' ? 'Заметка' : 'Изменить дело') : 'Что добавить?',
-    body: `${it ? '' : `<div class="seg" id="ek"><button aria-pressed="true" data-k="task">Дело</button><button aria-pressed="false" data-k="note">Заметка</button><button aria-pressed="false" data-k="topics">Темы</button></div>`}
+    eyebrow: it ? 'Правка' : 'Быстрый ввод', title: it ? 'Изменить дело' : 'Что добавить?',
+    body: `${it ? '' : `<div class="seg" id="ek"><button aria-pressed="true" data-k="task">Дело</button><button aria-pressed="false" data-k="topics">Темы</button></div>`}
     <textarea class="field" id="et" rows="3" placeholder="Что в голове? Например: сдать лабу в пятницу в 18:00" style="margin-top:12px">${esc(ed.text)}</textarea>
     <div id="ep"></div>
     <div id="em"><div class="lbl">Срок</div><div class="chips" id="eq"></div><div class="row2" style="margin-top:10px"><input class="field" type="date" id="ed" aria-label="Дата"><input class="field" type="time" id="etm" aria-label="Время"></div>
@@ -485,20 +484,18 @@ function openEditor(id) {
   function compute() {
     ed.text = q('#et').value;
     if (it) ed.parsed = ed.text.trim() ? [{ title: ed.text.trim(), due: null, time: null }] : [];
-    else if (ed.kind === 'note') ed.parsed = ed.text.trim() ? [{ title: ed.text.trim(), due: null, time: null, kind: 'note' }] : [];
     else ed.parsed = D.splitThoughts(ed.text).map(c => D.parseQuick(c)).filter(p => p.title);
   }
   const dueChip = x => x.due ? `<span class="chip ${x.due < t ? 'hot' : 'warn'}">${ic('today')}${esc(D.fmtDay(x.due))}</span>` : '<span class="chip">Без срока</span>';
   function paint() {
     const P = ed.parsed, single = P.length <= 1, p = P[0];
     const dueV = single ? (ed.tDue ? ed.due : p?.due ?? null) : null, timeV = single ? (ed.tTime ? ed.time : p?.time ?? null) : null;
-    const isNote = (it ? it.kind : ed.kind) === 'note' || p?.kind === 'note';
-    q('#em').style.display = single && !isNote && (P.length || it) ? '' : 'none';
+    q('#em').style.display = single && (P.length || it) ? '' : 'none';
     if (single) {
       q('#ep').innerHTML = !p ? `<div class="sub" style="margin-top:10px">Пиши по-человечески: «позвонить маме завтра в 18:00». Несколько дел можно писать через запятую или с новой строки.</div>`
-        : `<div class="chips" style="margin-top:10px">${isNote ? '<span class="chip">Заметка без срока</span>' : dueChip({ due: dueV })}${timeV ? `<span class="chip warn">${ic('clock')}${timeV}</span>` : ''}${p.tail ? '<span class="chip hot">Хвост</span>' : ''}${p.approx && !ed.tDue ? '<span class="chip">≈ уточни день</span>' : ''}${dueV && !isNote ? `<span class="chip ok">${D.rel(dueV, t)}</span>` : ''}</div>`;
+        : `<div class="chips" style="margin-top:10px">${dueChip({ due: dueV })}${timeV ? `<span class="chip warn">${ic('clock')}${timeV}</span>` : ''}${p.tail ? '<span class="chip hot">Хвост</span>' : ''}${p.approx && !ed.tDue ? '<span class="chip">≈ уточни день</span>' : ''}${dueV ? `<span class="chip ok">${D.rel(dueV, t)}</span>` : ''}</div>`;
     } else {
-      q('#ep').innerHTML = `<div class="lbl">Найдено: ${P.length}</div>` + P.map((x, i) => `<div class="pcard"><div><b>${esc(x.title)}</b><div class="chips">${dueChip(x)}${x.time ? `<span class="chip warn">${ic('clock')}${x.time}</span>` : ''}${x.tail ? '<span class="chip hot">Хвост</span>' : ''}${x.kind === 'note' ? '<span class="chip">Заметка</span>' : ''}</div></div><button class="x" data-rm="${i}" aria-label="Убрать">${ic('close')}</button></div>`).join('');
+      q('#ep').innerHTML = `<div class="lbl">Найдено: ${P.length}</div>` + P.map((x, i) => `<div class="pcard"><div><b>${esc(x.title)}</b><div class="chips">${dueChip(x)}${x.time ? `<span class="chip warn">${ic('clock')}${x.time}</span>` : ''}${x.tail ? '<span class="chip hot">Хвост</span>' : ''}</div></div><button class="x" data-rm="${i}" aria-label="Убрать">${ic('close')}</button></div>`).join('');
     }
     q('#eq').innerHTML = quick.map(([l, v]) => `<button class="chip" aria-pressed="${dueV === v}" data-q="${v}">${l}</button>`).join('');
     q('#ed').value = dueV || ''; q('#etm').value = timeV || '';
@@ -521,13 +518,12 @@ function openEditor(id) {
     const P = ed.parsed, single = P.length === 1, p = P[0];
     if (it || single) {
       const dueV = ed.tDue ? ed.due : p.due ?? null, timeV = ed.tTime ? ed.time : p.time ?? null;
-      const kind = it ? it.kind : (ed.kind === 'note' || p.kind === 'note') ? 'note' : 'task';
-      const data = { title: p.title, kind, due: kind === 'note' ? null : dueV, time: kind === 'note' ? null : (dueV ? timeV : null), subject: q('#esub').value.trim(), est: num(q('#eest').value), step: q('#estep').value.trim(), remind: num(q('#erem').value), priv: q('#epriv').getAttribute('aria-checked') === 'true' };
+      const data = { title: p.title, kind: it ? it.kind : 'task', due: dueV, time: dueV ? timeV : null, subject: q('#esub').value.trim(), est: num(q('#eest').value), step: q('#estep').value.trim(), remind: num(q('#erem').value), priv: q('#epriv').getAttribute('aria-checked') === 'true' };
       const r = it ? St.updateItem(it.id, data) : St.addItem(data);
       if (r.kind === 'task' && r.due) ui.sel = r.id;
       toast(it ? 'Сохранено' : r.due && r.kind === 'task' ? `Добавлено · встанет на горизонте ${D.rel(r.due)}` : 'Добавлено');
     } else {
-      P.forEach(x => St.addItem({ title: x.title, due: x.due, time: x.due ? x.time : null, kind: x.kind === 'note' ? 'note' : 'task' }));
+      P.forEach(x => St.addItem({ title: x.title, due: x.due, time: x.due ? x.time : null, kind: 'task' }));
       toast(`Добавлено: ${P.length}`);
     }
     sfx('add'); closeSheet(); render();
@@ -545,7 +541,7 @@ function openDetail(id) {
   if (it.kind === 'task' && !it.done && it.step) b += `<p class="sub">Шаг: ${esc(it.step)}</p>`;
   if (rows) b += `<div class="lbl">Цена откладывания</div><div class="panel" style="padding:10px 14px 6px">${rows.map((r, i) => { const c = r.perDay <= 2 ? 'good' : r.perDay <= 5 ? 'gold' : 'bad'; const pct = Math.max(6, Math.min(100, r.perDay / it.est * 100)); return `<div class="cb ${i === 0 ? 'on' : ''}"><span class="l">${r.label}</span><span class="tr"><i style="width:${pct}%;background:var(--${c})"></i></span><span class="v">${D.fmtHours(r.perDay)}</span></div>`; }).join('')}<p class="sub" style="font-size:12.5px;margin:2px 0 6px">Нагрузка в день до сдачи</p></div>`;
   openSheet({
-    eyebrow: esc(it.kind === 'note' ? 'Заметка' : it.subject || (tail ? 'Хвост' : 'Дело')), title: esc(it.title), body: b,
+    eyebrow: esc(it.subject || (tail ? 'Хвост' : 'Дело')), title: esc(it.title), body: b,
     foot: `<button class="btn ${it.done ? 'btn-ghost' : 'btn-primary'}" data-act="done" data-id="${it.id}">${it.done ? 'Вернуть в дела' : 'Готово'}</button><button class="btn btn-ghost" data-act="edit" data-id="${it.id}">Изменить</button>${it.due ? `<button class="btn btn-sm btn-ghost" data-act="ics" data-id="${it.id}">${ic('today')}В календарь</button>` : ''}<button class="btn btn-sm btn-danger" data-act="del" data-id="${it.id}">${ic('trash')}Удалить</button>`,
   });
 }
@@ -579,10 +575,10 @@ function openCtx() {
 }
 function openAI() {
   if (!AI.ready()) return openSheet({ eyebrow: 'Помощник', title: 'Спросить ИИ', body: `<p class="sub" style="margin:0;line-height:1.55">Помощник видит твои дела, хвосты и горизонт, отвечает по ним и добавляет дела, когда ты попросишь. Нужен свой бесплатный ключ, это займёт пару минут.</p>`, foot: '<button class="btn btn-primary btn-lg btn-block" data-act="ai-setup">Подключить</button>' });
-  if (!St.meta().aiOk) return openSheet({ eyebrow: 'Перед первым вопросом', title: 'Что увидит помощник', body: `<p class="sub" style="margin:0;line-height:1.55">С каждым вопросом приложение отправляет твоему провайдеру ИИ снимок: ${AI.cfg().sees.tasks ? 'дела, сроки и хвосты' : ''}${AI.cfg().sees.notes ? ', заметки' : ''}. Помощник отвечает по ним и может предложить изменения, но применяются они только после твоего подтверждения.</p><p class="sub" style="line-height:1.55">Бесплатные тарифы могут использовать запросы для улучшения моделей. Дела с пометкой «Личное» не отправляются.</p>`, foot: '<button class="btn btn-primary btn-lg" data-act="ai-agree">Согласен</button><button class="btn btn-ghost" data-act="ai-ctx">Что именно уйдёт</button>' });
+  if (!St.meta().aiOk) return openSheet({ eyebrow: 'Перед первым вопросом', title: 'Что увидит помощник', body: `<p class="sub" style="margin:0;line-height:1.55">С каждым вопросом приложение отправляет твоему провайдеру ИИ снимок: ${AI.cfg().sees.tasks ? 'дела, сроки и хвосты' : ''}. Помощник отвечает по ним и может предложить изменения, но применяются они только после твоего подтверждения.</p><p class="sub" style="line-height:1.55">Бесплатные тарифы могут использовать запросы для улучшения моделей. Дела с пометкой «Личное» не отправляются.</p>`, foot: '<button class="btn btn-primary btn-lg" data-act="ai-agree">Согласен</button><button class="btn btn-ghost" data-act="ai-ctx">Что именно уйдёт</button>' });
   const c = AI.counts();
   openSheet({
-    eyebrow: `<span class="ctxl" style="display:inline-flex">${ic('eye')}${nTasks(c.tasks)} · ${nTails(c.tails)} · ${c.notes} ${D.plural(c.notes, ['заметка', 'заметки', 'заметок'])}</span>`, title: 'Помощник', cls: 'tall',
+    eyebrow: `<span class="ctxl" style="display:inline-flex">${ic('eye')}${nTasks(c.tasks)} · ${nTails(c.tails)}</span>`, title: 'Помощник', cls: 'tall',
     body: '<div class="chat" id="chat"></div><div class="sugs" id="sugs"></div>',
     foot: `<div class="askbar" style="flex:1 1 100%"><textarea class="field" id="aq" rows="1" placeholder="Спроси про свои дела…"></textarea><button class="send" data-act="ai-send" aria-label="Отправить">${ic('arrow')}</button></div>`,
     onOpen: () => paintChat(),
@@ -599,15 +595,15 @@ function openNews() {
     <li><span><b>Готово без таймера.</b> У быстрого дела одна кнопка, таймер только у больших дел.</span></li></ol>`, foot: '<button class="btn btn-primary btn-lg btn-block" data-act="close">Понятно</button>' });
 }
 function openCloud(c) {
-  const mine = { tasks: St.items().filter(x => x.kind === 'task').length, notes: St.items().filter(x => x.kind === 'note').length, topics: St.items().filter(x => x.kind === 'topic').length, reviews: St.items().filter(x => x.kind === 'topic').reduce((n, x) => n + (x.mem && x.mem.n ? x.mem.n : 0), 0) };
+  const mine = { tasks: St.items().filter(x => x.kind === 'task').length, topics: St.items().filter(x => x.kind === 'topic').length, reviews: St.items().filter(x => x.kind === 'topic').reduce((n, x) => n + (x.mem && x.mem.n ? x.mem.n : 0), 0) };
   const row = (l, a, b) => `<div class="snap"><div><b>${l}</b></div><span class="rv-d">в облаке <b>${a}</b> · здесь <b>${b}</b></span></div>`;
   let body;
   if (c.empty) body = '<p class="sub" style="margin:0">В облаке пока ничего нет. Нажми «Синхронизировать сейчас»: всё, что на этом телефоне, уйдёт туда.</p>';
   else if (c.bad) body = '<p class="sub" style="margin:0">Документ в облаке не читается. Нажми «Синхронизировать сейчас»: он перезапишется данными с этого телефона.</p>';
   else {
-    const same = c.tasks === mine.tasks && c.notes === mine.notes && c.topics === mine.topics && c.reviews === mine.reviews;
+    const same = c.tasks === mine.tasks && c.topics === mine.topics && c.reviews === mine.reviews;
     body = `<div class="chips" style="margin-bottom:6px">${same ? '<span class="chip ok">Совпадает с телефоном</span>' : St.meta().dirty ? '<span class="chip warn">На телефоне есть неотправленное</span>' : '<span class="chip warn">Отличается от телефона: синхронизируй</span>'}</div>
-    ${row('Дела (и экзамены)', c.tasks, mine.tasks)}${row('Темы', c.topics, mine.topics)}${row('Повторов записано', c.reviews, mine.reviews)}${row('Заметки', c.notes, mine.notes)}
+    ${row('Дела (и экзамены)', c.tasks, mine.tasks)}${row('Темы', c.topics, mine.topics)}${row('Повторов записано', c.reviews, mine.reviews)}
     <div class="snap"><div><b>Размер</b><small>лимит облака около ${Math.round(Auth.LIMIT / 1000)} КБ</small></div><span class="rv-d"><b>${Math.max(1, Math.round(c.bytes / 1000))} КБ</b></span></div>
     <div class="snap"><div><b>Последняя запись</b></div><span class="rv-d"><b>${c.t ? `${D.fmtShort(D.iso(new Date(c.t)))} ${hhmm(c.t)}` : '—'}</b></span></div>`;
   }
@@ -646,7 +642,7 @@ const H = {
   nav: el => { if (ui.view === el.dataset.to && !ui.sub) { window.scrollTo({ top: 0, behavior: 'smooth' }); sfx('tap'); return; } go(el.dataset.to); },
   add: () => openEditor(),
   edit: el => { closeSheet(true); openEditor(el.dataset.id); },
-  open: el => { const it = St.get_(el.dataset.id); if (!it) return; closeOpenSwipes(); it.kind === 'note' ? openEditor(it.id) : openDetail(it.id); },
+  open: el => { const it = St.get_(el.dataset.id); if (!it) return; closeOpenSwipes(); openDetail(it.id); },
   close: () => { const ids = rv ? rv.res.map(r => r.id) : []; closeSheet(); if (rv) { rv = null; ui.enter = false; ui.flash = new Set(ids); render(); ui.flash = null; } },
   quick: () => go('more'),
   toggle: el => {
