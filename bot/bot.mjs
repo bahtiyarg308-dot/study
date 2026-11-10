@@ -61,12 +61,13 @@ export async function push() {
   }
   return false;
 }
-const DEF = { chat: null, tz: null, digest: 8, eve: true, on: true, lvl: 'steady', off: 0, setup: 0, kb: 0, sent: {}, nag: {}, pend: { last: 0, mid: 0, snz: 0 } };
+const DEF = { chat: null, tz: null, digest: 8, eve: true, on: true, lvl: 'max', lvlSet: false, off: 0, setup: 0, kb: 0, sent: {}, nag: {}, ign: {}, pend: { last: 0, mid: 0, snz: 0 }, ahead: { mid: 0, snz: 0 } };
 const applyTz = () => { if (S.bot.tz) process.env.TZ = S.bot.tz; };
 export async function loadBot() {
   const doc = await F.docGet(await auth(), BPATH()); S.botDoc = doc;
   let b = {}; try { b = doc && doc.d ? JSON.parse(doc.d) : {}; } catch (e) { /* заново */ }
-  S.bot = { ...DEF, ...b, sent: b.sent || {}, nag: b.nag || {}, pend: { ...DEF.pend, ...(b.pend || {}) } };
+  S.bot = { ...DEF, ...b, sent: b.sent || {}, nag: b.nag || {}, ign: b.ign || {}, pend: { ...DEF.pend, ...(b.pend || {}) }, ahead: { ...DEF.ahead, ...(b.ahead || {}) } };
+  if (!b.lvlSet) S.bot.lvl = 'max';                       // пока уровень не выбран вручную, бот напоминает как можно настойчивее
   if (E.TG_CHAT_ID && !S.bot.chat) S.bot.chat = Number(E.TG_CHAT_ID);
   applyTz();
 }
@@ -83,14 +84,18 @@ const mark = () => { S.botDirty = true; };
 
 /* ───────── как часто напоминать ───────── */
 // pre — за сколько минут до срока (минус), rep — через сколько минут повторять после срока, maxAfter — как долго,
-// pend — как часто присылать общий список «не сделано» (хвосты и дела без времени),
-// ahead — за сколько дней до срока напоминать утром (для зачётов и сдач, у которых нет точного времени)
+// pend — как часто присылать общий список «не сделано» (хвосты и дела дня без времени),
+// ahead(d, s) — в какие минуты суток напоминать о деле, до срока которого ещё d дней (s — начало дня): чем ближе срок, тем чаще
+const DAY = h => h * 60;
 const LEVELS = {
-  calm: { name: 'Спокойно', pre: [-30], rep: 60, maxAfter: 120, pend: 180, ahead: [1] },
-  steady: { name: 'Настойчиво', pre: [-30, -10], rep: 10, maxAfter: 120, pend: 60, ahead: [3, 1] },
-  loud: { name: 'Очень настойчиво', pre: [-60, -30, -10, -5], rep: 5, maxAfter: 180, pend: 30, ahead: [7, 3, 2, 1] },
+  calm: { name: 'Спокойно', pre: [-30], rep: 60, maxAfter: 120, pend: 180, ahead: (d, s) => (d === 1 ? [s] : []) },
+  steady: { name: 'Настойчиво', pre: [-30, -10], rep: 10, maxAfter: 120, pend: 60, ahead: (d, s) => (d === 1 ? [s, DAY(18)] : d <= 3 ? [s] : []) },
+  max: {
+    name: 'Не отстану', pre: [-60, -30, -15, -10, -5], rep: 5, maxAfter: 240, pend: 30,
+    ahead: (d, s) => (d >= 8 ? [s] : d >= 4 ? [s, DAY(19)] : d >= 2 ? [s, DAY(13), DAY(19)] : [s, DAY(11), DAY(14), DAY(17), DAY(20)]),
+  },
 };
-const lv = () => LEVELS[S.bot.lvl] || LEVELS.steady;
+const lv = () => LEVELS[S.bot.lvl] || LEVELS.max;
 
 /* ───────── что показываем ───────── */
 // Оформление: без значков в тексте, только типографика. Первая строка видна на экране блокировки, поэтому в ней сразу суть.
@@ -117,18 +122,23 @@ function viewTimed(x, left) {
     ...kb([[btn('Готово', `d:${x.id}`, 'success'), btn('Через час', `s:${x.id}`)], [btn('Завтра', `z:${x.id}`), appBtn('Открыть Тень')]]),
   };
 }
-/** Заранее: «Через 3 дня · Зачёт по английскому». Утром, за несколько дней до срока. */
+/** Заранее: чем ближе срок, тем настойчивее; учитывает оценку работы, первый шаг и то, сколько раз напоминание проигнорировано. */
 function viewAhead(t, list) {
-  const word = n => (n === 1 ? 'Завтра' : `Через ${D.days(n)}`);
-  const head = list.length === 1 ? `<b>Скоро · ${esc(list[0].title)}</b>` : `<b>Скоро: ${list.length} ${D.plural(list.length, ['дело', 'дела', 'дел'])}</b>`;
-  const lines = list.slice(0, 8).map(x => `<b>${word(D.diffDays(t, x.due))}</b>  ${esc(x.title)}${sub(x)}\n<i>${esc(D.fmtDay(x.due))}${x.time ? ', ' + x.time : ''}</i>`).join('\n');
-  return { text: `${head}\n\n${quote(lines)}`, ...kb([[appBtn('Открыть Тень')]]) };
+  const ign = S.bot.ign || {}, worst = Math.max(0, ...list.map(x => ign[x.id] || 0));
+  const dl = x => D.diffDays(t, x.due), when = n => (n === 1 ? 'Завтра срок' : n <= 3 ? `Осталось ${D.days(n)}` : `Через ${D.days(n)}`);
+  const head = list.length === 1 ? `<b>${when(dl(list[0]))} · ${esc(list[0].title)}</b>` : `<b>Не забудь: ${list.length} ${D.plural(list.length, ['дело', 'дела', 'дел'])}</b>`;
+  const lines = list.slice(0, 6).map(x => {
+    const n = dl(x);
+    return `${list.length > 1 ? `<b>${when(n)}</b>  ${esc(x.title)}${sub(x)}\n` : ''}<i>${esc(D.fmtDay(x.due))}${x.time ? ', ' + x.time : ''}</i>${x.est ? ` · около ${D.fmtHours(x.est / n)} в день` : ''}${x.step ? `\nПервый шаг: ${esc(x.step)}` : ''}`;
+  }).join('\n');
+  const tone = worst >= 5 ? `\n\n<i>Напоминаю уже ${worst} раз. Начни прямо сейчас, хотя бы с первого шага.</i>` : '';
+  return { text: `${head}\n\n${quote(lines)}${tone}`, ...kb([...list.slice(0, 3).map(x => [btn('✓ ' + cut(x.title, 24), `d:${x.id}:a`, 'success')]), [btn('Через 3 часа', 'sa'), appBtn('Открыть Тень')]]) };
 }
 function viewPending(t, min, now) {
   const list = pending(t, min), tl = tails(t), td = list.filter(x => !St.isTail(x, t)), parts = [];
   if (tl.length) parts.push(`<b>Хвосты</b>\n${quote(tl.slice(0, 6).map(x => tailLine(x, t)).join('\n'))}`);
   if (td.length) parts.push(`<b>Сегодня</b>\n${quote(td.slice(0, 8).map(itemLine).join('\n'))}`);
-  const more = list.length > 4 ? `\n\nЕщё ${list.length - 4} в приложении` : '';
+  const more = (list.length > 4 ? `\n\nЕщё ${list.length - 4} в приложении` : '') + (Math.max(0, ...list.map(x => S.bot.ign[x.id] || 0)) >= 5 ? '\n\n<i>Это висит уже давно. Закрой хотя бы одно дело прямо сейчас.</i>' : '');
   return { list, text: `<b>Не сделано: ${list.length}</b>\n<i>${esc(D.fmtDay(t))}, ${hm(now)}</i>\n\n${parts.join('\n')}${more}`, ...kb([...taskRows(list, 'p'), [btn('Через час', 'sp'), appBtn('Открыть Тень')]]) };
 }
 function viewDigest(t) {
@@ -146,7 +156,7 @@ const validTz = z => { try { new Intl.DateTimeFormat('ru', { timeZone: z }); ret
 function viewSettings() {
   const b = S.bot, chk = on => (on ? '✓ ' : '');
   return {
-    text: `<b>Напоминания</b>\n\n${quote('<b>Спокойно</b>: за 30 минут и каждый час после срока\n<b>Настойчиво</b>: за 30 и 10 минут, потом каждые 10 минут\n<b>Очень настойчиво</b>: каждые 5 минут, пока не сделаешь')}\nДела без точного времени (зачёт, сдача) напоминают утром за несколько дней: в режиме «Настойчиво» за 3 дня и за 1 день. Хвосты и дела дня приходят общим списком, пока не будут сделаны. Часовой пояс: <code>${esc(b.tz || 'не выбран')}</code>`,
+    text: `<b>Напоминания</b>\n\n${quote('<b>Спокойно</b>: за 30 минут до дела и утром за день до срока\n<b>Настойчиво</b>: за 30 и 10 минут, потом каждые 10 минут; за 3 дня и за день\n<b>Не отстану</b>: каждый день до срока, чем ближе, тем чаще (за день каждые 2–3 часа, в день срока каждые 5 минут), хвосты каждые 30 минут, пока не сделано')}\nБот учитывает твою оценку времени и первый шаг и становится строже, если ты не реагируешь. Ночью с 23:00 до 06:00 молчит. Часовой пояс: <code>${esc(b.tz || 'не выбран')}</code>`,
     ...kb([Object.entries(LEVELS).map(([k, v]) => btn(`${chk(b.lvl === k)}${v.name}`, `c:lv:${k}`)),
       [7, 8, 9, 10].map(h => btn(`${chk(b.digest === h)}${h}:00`, `c:dg:${h}`)).concat(btn(`${chk(!b.digest)}Без сводки`, 'c:dg:0')),
       [btn(`Вечер про завтра · ${b.eve ? 'вкл' : 'выкл'}`, 'c:ev')],
@@ -188,11 +198,14 @@ async function onCallback(cq) {
     if (!it) { await ack('Такого дела уже нет'); await del(chat, mid); return; }
     if (a === 'd') { if (!it.done) St.toggleDone(x); } else St.updateItem(x, { due: D.addDays(t, 1) });
     await ack(a === 'd' ? 'Готово' : 'Перенёс на завтра');
-    if (b.nag[x]) { delete b.nag[x]; mark(); }
+    if (b.nag[x]) delete b.nag[x];
+    delete b.ign[x]; mark();
     if (y === 'p' || y === 'g') return refresh(chat, mid, y);
+    if (y === 'a') { b.ahead.mid = 0; return del(chat, mid); }
     return del(chat, mid);
   }
-  if (a === 's') { b.nag[x] = { ...(b.nag[x] || {}), snz: clock() + 3600000, mid: 0, due: it ? it.due : '', time: it ? it.time : '' }; mark(); await ack('Напомню через час'); return del(chat, mid); }
+  if (a === 's') { delete b.ign[x]; b.nag[x] = { ...(b.nag[x] || {}), snz: clock() + 3600000, mid: 0, due: it ? it.due : '', time: it ? it.time : '' }; mark(); await ack('Напомню через час'); return del(chat, mid); }
+  if (a === 'sa') { b.ahead.snz = clock() + 3 * 3600000; b.ahead.mid = 0; mark(); await ack('Напомню через 3 часа'); return del(chat, mid); }
   if (a === 'sp') { b.pend.snz = clock() + 3600000; b.pend.mid = 0; mark(); await ack('Напомню через час'); return del(chat, mid); }
   if (a === 'tz') {
     if (!validTz(x)) { await ack('Не знаю такой пояс'); return; }
@@ -200,7 +213,7 @@ async function onCallback(cq) {
     const v = viewSettings(); return edit(chat, mid, v.text, { reply_markup: v.reply_markup });
   }
   if (a === 'c') {
-    if (x === 'lv' && LEVELS[y]) b.lvl = y; else if (x === 'dg') b.digest = +y; else if (x === 'ev') b.eve = !b.eve; else if (x === 'on') b.on = !b.on;
+    if (x === 'lv' && LEVELS[y]) { b.lvl = y; b.lvlSet = true; } else if (x === 'dg') b.digest = +y; else if (x === 'ev') b.eve = !b.eve; else if (x === 'on') b.on = !b.on;
     else if (x === 'tz') { await ack(); return edit(chat, mid, 'Выбери часовой пояс:', { reply_markup: { inline_keyboard: zoneRows() } }); }
     mark(); await ack(); const v = viewSettings(); return edit(chat, mid, v.text, { reply_markup: v.reply_markup });
   }
@@ -228,6 +241,8 @@ export async function tick(now = new Date(clock())) {
     if (!x || x.done || x.due !== n.due || x.time !== n.time) { await del(b.chat, n.mid); delete b.nag[id]; mark(); }
   }
 
+  for (const id of Object.keys(b.ign)) { const x = St.get_(id); if (!x || x.done) { delete b.ign[id]; mark(); } }
+
   // 1. дела со временем: за 30 и 10 минут, в срок и потом каждые несколько минут, пока не сделано
   if (awake) for (const x of todays(t)) {
     if (!x.time) continue;
@@ -244,8 +259,6 @@ export async function tick(now = new Date(clock())) {
 
   // 2. утренняя сводка (остаётся в чате) и общий список «не сделано» (каждый раз заменяет предыдущий)
   const start = b.digest || 8;
-  const soon = open().filter(x => x.due && L.ahead.includes(D.diffDays(t, x.due))).sort((a, c) => a.due.localeCompare(c.due) || (a.time || '').localeCompare(c.time || ''));
-  if (soon.length && awake && h >= start && h < start + 6 && once('ahead:' + t)) { const v = viewAhead(t, soon); await send(b.chat, v.text, { reply_markup: v.reply_markup }); }
   if (b.digest && h >= b.digest && h < b.digest + 6 && once('dig:' + t)) {
     const v = viewDigest(t); await send(b.chat, v.text, { reply_markup: v.reply_markup }); b.pend.last = ms; mark();
   }
@@ -255,7 +268,19 @@ export async function tick(now = new Date(clock())) {
     const v = viewPending(t, min, ms);
     await del(b.chat, P.mid);
     const r = await send(b.chat, v.text, { reply_markup: v.reply_markup });
-    P.mid = r.message_id; P.last = ms; mark();
+    P.mid = r.message_id; P.last = ms; pl.forEach(x => { b.ign[x.id] = (b.ign[x.id] || 0) + 1; }); mark();
+  }
+
+  // 2б. заранее, до срока: каждый день, чем ближе срок, тем чаще; сообщение заменяет предыдущее
+  const A = b.ahead, dated = open().filter(x => x.due && x.due > t && D.diffDays(t, x.due) <= 30), slotsOf = x => L.ahead(D.diffDays(t, x.due), start * 60);
+  const due = [...new Set(dated.flatMap(slotsOf))].filter(sl => min >= sl && min < sl + 45 && !b.sent[`ah:${t}:${sl}`]).sort((p, c) => p - c);
+  if (!dated.length && A.mid) { await del(b.chat, A.mid); A.mid = 0; mark(); }
+  else if (due.length && awake && !(A.snz > ms)) {
+    const sl = due[due.length - 1]; due.forEach(k => once(`ah:${t}:${k}`));       // пропущенные шаги не копим
+    const list = dated.filter(x => slotsOf(x).includes(sl)).sort((p, c) => p.due.localeCompare(c.due));
+    const v = viewAhead(t, list); await del(b.chat, A.mid);
+    const r = await send(b.chat, v.text, { reply_markup: v.reply_markup });
+    A.mid = r.message_id; list.forEach(x => { b.ign[x.id] = (b.ign[x.id] || 0) + 1; }); mark();
   }
 
   // 3. вечером про завтра

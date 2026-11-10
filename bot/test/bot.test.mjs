@@ -42,6 +42,7 @@ const at = (h, m) => { const d = new Date(); d.setHours(h, m, 0, 0); return d; }
 const go = async (h, m) => { await clear(); S.testNow = at(h, m).getTime(); await tick(); };   // «сейчас» = h:m, затем проверка напоминаний
 
 await loadBot(); await pull();
+ok('until a level is chosen the bot nags as persistently as possible', S.bot.lvl === 'max' && !S.bot.lvlSet);
 ok('bot signs in and reads the cloud data', St.items().length === 4, St.items().length);
 
 // — доступ только владельцу
@@ -60,6 +61,7 @@ ok('/start asks for a time zone first', /часовой пояс/.test(s1.text) 
 await tick(); ok('no reminders are sent before a time zone is chosen', (await sent(/Не сделано|Доброе|Пора|Через/)).length === 0);
 await handle(cb('tz:Asia/Tashkent', 9));
 ok('choosing a zone is stored and applied', S.bot.tz === 'Asia/Tashkent' && process.env.TZ === 'Asia/Tashkent');
+S.bot.lvl = 'steady'; S.bot.lvlSet = true;   // дальше проверяем режим «Настойчиво», «Не отстану» отдельным блоком ниже
 await clear(); await handle(msg('сдать лабу завтра в 10'));
 ok('plain text is NOT turned into a task: the bot only reminds', St.items().length === n0 && /только присылаю напоминания/.test((await sent()).pop().text));
 ok('and points to the app with a Mini App button', buttons((await sent()).pop()).some(b => b.web_app && b.web_app.url === 'https://example.test/app/'));
@@ -72,14 +74,15 @@ const dg = (await sent(/Доброе утро/)).pop();
 ok('morning digest lists the tail and today\'s task, with the memory line', dg && /Хвосты/.test(dg.text) && /Сдать договор/.test(dg.text) && /Позвонить маме/.test(dg.text) && /Память/.test(dg.text), dg && dg.text.slice(0, 50));
 ok('with a green done button and the Mini App', buttons(dg).find(b => b.callback_data === 'd:tail1:g').style === 'success' && buttons(dg).some(b => b.web_app));
 await go(8, 30); ok('no nagging right after the digest', (await sent()).length === 0);
-// — заранее: зачёт на 3 дня вперёд, у него нет времени, поэтому «за 30 минут» не будет, а утром за 3 и за 1 день будет
-St.addItem({ title: 'Зачёт по английскому', due: day(3), subject: 'Английский' });
+// — заранее (Настойчиво): зачёт без времени, до него 3 дня; «за 30 минут» тут нет, но напоминания идут
+St.addItem({ title: 'Зачёт по английскому', due: day(3), subject: 'Английский', est: 6, step: 'Написать план' });
 St.addItem({ title: 'Курсовая', due: day(5) });
-S.bot.sent['ahead:' + D.todayISO()] = 0; delete S.bot.sent['ahead:' + D.todayISO()];
-await go(8, 40); const ah = (await sent(/Скоро/)).pop();
-ok('a date-only deadline is announced days ahead (3 and 1 day in the default mode)', ah && /Через 3 дня/.test(ah.text) && /Зачёт по английскому/.test(ah.text) && /Завтра/.test(ah.text) && /Лаба по физике/.test(ah.text), ah && ah.text.replace(/\n/g, ' / '));
-ok('but not 5 days ahead', !/Курсовая/.test(ah.text));
-ok('and only once a day', (await (async () => { await go(8, 50); return (await sent(/Скоро/)).length; })()) === 0);
+delete S.bot.sent['ah:' + D.todayISO() + ':480'];
+await go(8, 40); const ah = (await sent(/Не забудь|Осталось|Завтра срок/)).pop();
+ok('a date-only deadline is announced ahead (3 days and 1 day in this mode)', ah && /Осталось 3 дня/.test(ah.text) && /Зачёт по английскому/.test(ah.text) && /Завтра срок/.test(ah.text) && /Лаба по физике/.test(ah.text), ah && ah.text.replace(/\n/g, ' / '));
+ok('it counts the daily load from the estimate and shows the first step', /около 2 ч в день/.test(ah.text) && /Первый шаг: Написать план/.test(ah.text));
+ok('but not 5 days ahead in this mode', !/Курсовая/.test(ah.text));
+await go(8, 50); ok('and not twice in the same slot', (await sent(/Не забудь|Осталось|Завтра срок/)).length === 0);
 await go(9, 10);
 const n1 = (await sent(/Не сделано: 1/)).pop();
 ok('an hour later a short «not done» list arrives (tail only, the 18:30 call has its own timer)', n1 && /Сдать договор/.test(n1.text) && !/Позвонить/.test(n1.text));
@@ -93,7 +96,7 @@ await go(12, 30); ok('and nothing more is sent', (await sent()).length === 0);
 
 // — дело со временем: за 30 и 10 минут, в срок, потом каждые 10 минут
 await go(17, 59); ok('nothing before the first step', (await sent()).length === 0);
-await go(18, 0); let r = (await sent()).pop();
+await go(18, 0); let r = (await sent(/Через 30 мин/)).pop();
 ok('30 minutes before: «Через 30 мин» with the time', r && /Через 30 мин/.test(r.text) && /<code>18:30<\/code>/.test(r.text) && /Личное/.test(r.text), r && r.text.replace(/\n/g, ' / '));
 ok('with Готово, Через час, Завтра and the app', ['Готово', 'Через час', 'Завтра', 'Открыть Тень'].every(t => buttons(r).some(b => b.text === t)) && buttons(r).find(b => b.text === 'Готово').style === 'success');
 await go(18, 2); ok('the same step is never sent twice', (await sent()).length === 0);
@@ -131,17 +134,44 @@ await go(3, 0); ok('nor before 06:00', (await sent()).length === 0);
 await go(14, 0); ok('in the afternoon the undone task without a time arrives in the list', /Прочитать главу/.test((await sent()).pop().text));
 await clear(); await handle(msg('/settings'));
 const st = (await sent()).pop();
-ok('/settings offers three levels and the digest hour', ['Спокойно', 'Настойчиво', 'Очень настойчиво'].every(n => buttons(st).some(b => b.text.includes(n))) && /Напоминания/.test(st.text));
-await handle(cb('c:lv:loud', 70)); ok('«Очень настойчиво» can be chosen', S.bot.lvl === 'loud');
-await go(14, 20); ok('the list repeats every 30 minutes in that mode, not before', (await sent()).length === 0);
+ok('/settings offers three levels and the digest hour', ['Спокойно', 'Настойчиво', 'Не отстану'].every(n => buttons(st).some(b => b.text.includes(n))) && /Напоминания/.test(st.text));
+await handle(cb('c:lv:max', 70)); ok('«Не отстану» can be chosen and is remembered as an explicit choice', S.bot.lvl === 'max' && S.bot.lvlSet === true);
+await go(14, 20); ok('the list repeats every 30 minutes in that mode, not before', (await sent(/Не сделано/)).length === 0);
 await go(14, 35); ok('…and after 35 minutes it does', (await sent(/Не сделано/)).length === 1);
 await handle(cb('c:lv:steady', 70)); await handle(cb('c:on', 70)); await go(16, 0);
 ok('silent mode sends nothing', S.bot.on === false && (await sent()).length === 0);
 await handle(cb('c:on', 70)); ok('and can be switched back on', S.bot.on === true);
 
+// — «Не отстану»: каждый день до срока, чем ближе срок, тем чаще
+await handle(cb('c:lv:max', 70)); await handle(cb('c:on', 70)); if (!S.bot.on) await handle(cb('c:on', 70));
+St.items().filter(x => x.kind === 'task' && !x.done).forEach(x => St.toggleDone(x.id));
+S.bot.sent = {}; S.bot.ahead = { mid: 0, snz: 0 }; S.bot.pend = { last: 0, mid: 0, snz: 0 }; S.bot.ign = {}; S.bot.nag = {};
+const tday = D.todayISO(), far = St.addItem({ title: 'Далёкая сдача', due: day(12) }), prj = St.addItem({ title: 'Проект', due: day(6) });
+const zach = St.addItem({ title: 'Зачёт', due: day(3), est: 6, step: 'Написать план' }), exm = St.addItem({ title: 'Экзамен', due: day(1), time: '15:00' });
+await go(8, 5); let a1 = (await sent(/Не забудь/)).pop();
+ok('morning: everything with a date ahead is mentioned every day (even 12 days away)', a1 && /Не забудь: 4 дела/.test(a1.text) && /Через 12 дн/.test(a1.text) && /Далёкая сдача/.test(a1.text), a1 && a1.text.slice(0, 40));
+ok('with the daily load and first step of the one that has an estimate', /около 2 ч в день/.test(a1.text) && /Первый шаг: Написать план/.test(a1.text));
+const am1 = S.bot.ahead.mid; await clear(); S.testNow = at(8, 5).getTime(); await handle(cb('sa', am1));
+ok('«Через 3 часа» removes the message and pauses this stream', (await dels()).includes(am1) && S.bot.ahead.snz > at(8, 5).getTime());
+await go(11, 0); ok('while paused the 11:00 slot is skipped', (await sent(/Завтра срок/)).length === 0);
+await go(11, 10); let a2 = (await sent(/Завтра срок/)).pop();
+ok('after the pause it comes back, and only about what is due tomorrow (the closer, the more often)', a2 && /Экзамен/.test(a2.text) && !/Далёкая/.test(a2.text) && /15:00/.test(a2.text), a2 && a2.text.replace(/\n/g, ' / '));
+const am2 = S.bot.ahead.mid; await go(13, 5); let a3 = (await sent(/Осталось 3 дня/)).pop();
+ok('13:00: 2–3 days ahead get their extra reminder, tomorrow\'s do not', a3 && /Зачёт/.test(a3.text) && !/Экзамен/.test(a3.text));
+const am3 = S.bot.ahead.mid; await go(14, 5);
+ok('14:00: tomorrow again, and the previous message is replaced (chat stays clean)', (await sent(/Завтра срок/)).length === 1 && (await dels()).includes(am3));
+await go(19, 5); let a4 = (await sent(/Не забудь/)).pop();
+ok('evening: 4–7 days and 2–3 days ahead get their second reminder', a4 && /Проект/.test(a4.text) && /Зачёт/.test(a4.text) && !/Далёкая/.test(a4.text) && !/Экзамен/.test(a4.text), a4 && a4.text.replace(/\n/g, ' / '));
+S.bot.ign[zach.id] = 5; delete S.bot.sent[`ah:${tday}:${19 * 60}`]; await go(19, 20);
+ok('after many ignored reminders the tone gets firmer', /Напоминаю уже 5 раз/.test((await sent(/Не забудь/)).pop().text));
+const am4 = S.bot.ahead.mid; await clear(); await handle(cb(`d:${zach.id}:a`, am4));
+ok('«Готово» finishes it, removes the message and forgets the counter', St.get_(zach.id).done === true && (await dels()).includes(am4) && !S.bot.ign[zach.id]);
+await go(20, 5); ok('at night-time slot 20:00 only what is due tomorrow remains (the finished one is gone)', /Экзамен/.test((await sent(/Завтра срок/)).pop()?.text || '') && !/Зачёт/.test((await sent()).map(c => c.text).join('')));
+await go(23, 30); ok('and after 23:00 it is quiet again', (await sent()).length === 0);
+
 // — состояние переживает перезапуск
 S.botDirty = true; await saveBot(); const keep = { tz: S.bot.tz, lvl: S.bot.lvl }; S.bot = null; await loadBot();
-ok('bot state survives a restart (stored in the cloud)', S.bot.tz === keep.tz && S.bot.lvl === 'steady' && !!S.bot.sent['dig:' + D.todayISO()] && process.env.TZ === 'Asia/Tashkent');
+ok('bot state survives a restart (stored in the cloud)', S.bot.tz === keep.tz && S.bot.lvl === 'max' && !!S.bot.sent['dig:' + D.todayISO()] && process.env.TZ === 'Asia/Tashkent');
 
 // — основной цикл: убирает прежнее нижнее меню один раз и настраивает бота
 S.testNow = 0; S.bot.setup = 0; S.bot.kb = 1; S.botDirty = true; await saveBot(); await clear();
