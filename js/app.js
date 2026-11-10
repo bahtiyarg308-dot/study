@@ -3,9 +3,12 @@ import * as St from './store.js';
 import { layout, radarHTML } from './radar.js';
 import * as AI from './ai.js';
 import { sfx, buzz, cfg as sndCfg } from './sfx.js';
+import * as Auth from './auth.js';
+import * as F from './fb.js';
+import { openGate, isOpen as gateOpen } from './gate.js';
 import { $, $$, esc, ic, num, toast, openSheet, closeSheet, sheetEl, applyAppearance, THEMES, COLORS, NOIR_ACC, accOf, themeId } from './ui.js';
 
-const APP_VERSION = '2.0';
+const APP_VERSION = '2.1';
 const ui = { view: 'today', sub: null, filter: 'all', lmode: 'list', q: '', day: null, sel: null, enter: true, models: {} };
 const viewEl = $('#view'), tabsEl = $('#tabs');
 const today = () => D.todayISO();
@@ -163,8 +166,27 @@ function vMore() {
   if (ui.sub === 'look') return backHead('Оформление') + settingsHTML();
   if (ui.sub === 'data') return vData();
   if (ui.sub === 'ai') return vAI();
+  if (ui.sub === 'account') return vAccount();
   if (ui.sub === 'about') return vAbout();
-  return pageHead('Разделы и настройки', 'Ещё', '') + `<div class="panel mlist">${mrow('spark', 'ИИ-помощник', AI.ready() ? 'Подключён · ' + esc(AI.cur().model) : 'Подключить умного помощника', 'sub', 'data-s="ai"')}${mrow('moon', 'Комната', 'Фокус в темноте: таймер и больше ничего', 'room-free')}${mrow('theme', 'Оформление', `${THEMES[themeId()].name}, акцент, звуки`, 'sub', 'data-s="look"')}${mrow('db', 'Данные', 'Копии, перенос, календарь', 'sub', 'data-s="data"')}${mrow('info', 'О приложении', 'Установка и что нового', 'sub', 'data-s="about"')}</div>`;
+  return pageHead('Разделы и настройки', 'Ещё', '') + `<div class="panel mlist">${mrow('shield', 'Аккаунт', accSummary(), 'sub', 'data-s="account"')}${mrow('spark', 'ИИ-помощник', AI.ready() ? 'Подключён · ' + esc(AI.cur().model) : 'Подключить умного помощника', 'sub', 'data-s="ai"')}${mrow('moon', 'Комната', 'Фокус в темноте: таймер и больше ничего', 'room-free')}${mrow('theme', 'Оформление', `${THEMES[themeId()].name}, акцент, звуки`, 'sub', 'data-s="look"')}${mrow('db', 'Данные', 'Копии, перенос, календарь', 'sub', 'data-s="data"')}${mrow('info', 'О приложении', 'Установка и что нового', 'sub', 'data-s="about"')}</div>`;
+}
+
+/* ───────── аккаунт и синхронизация ───────── */
+const hhmm = t => { const d = new Date(t); return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
+function syncLine() {
+  const st = Auth.status, m = St.meta();
+  if (st.state === 'sync') return 'Синхронизация…';
+  if (st.state === 'offline') return m.dirty ? 'Нет сети. Изменения уйдут в облако, когда она появится' : 'Нет сети';
+  if (st.state === 'err') return 'Не получилось синхронизировать';
+  const at = st.at || m.syncedAt;
+  return at ? `Синхронизировано в ${hhmm(at)}${m.dirty ? ' · есть неотправленное' : ''}` : 'Ждёт первой синхронизации';
+}
+const accSummary = () => { const a = Auth.acc(); return a ? `${esc(a.email)} · ${syncLine().toLowerCase()}` : 'Не выполнен вход'; };
+function vAccount() {
+  const a = Auth.acc(), st = Auth.status;
+  return `${backHead('Аккаунт')}<div class="panel"><div class="h2">Почта</div><div style="font-size:16px;font-weight:600;margin-top:6px;word-break:break-all">${esc(a ? a.email : '')}</div><p class="sub" style="margin-top:10px">${syncLine()}</p>${st.state === 'err' && st.err ? `<p class="acc-err" style="margin-top:8px">${esc(st.err)}</p>` : ''}</div>
+  <div class="panel mlist" style="margin-top:12px">${mrow('upload', 'Синхронизировать сейчас', 'Дела уйдут в облако, чужие изменения придут', 'sync')}${mrow('shield', 'Сменить пароль', 'Пришлём письмо со ссылкой', 'acc-pass')}${mrow('close', 'Выйти', 'Дела на этом телефоне останутся, но вход понадобится снова', 'acc-out')}</div>
+  <p class="sub" style="font-size:12.5px;margin-top:14px">Один аккаунт на «Тень» и «Подход». Дела «Тени» лежат в личном разделе аккаунта, партнёры «Подхода» их не видят.</p>`;
 }
 
 const previewSvg = '<svg viewBox="0 0 160 92" aria-hidden="true"><circle cx="80" cy="46" r="15" class="ring"/><circle cx="80" cy="46" r="28" class="ring"/><circle cx="80" cy="46" r="42" class="ring"/><path d="M62 58L42 73" style="stroke:var(--bad)" stroke-width="3" stroke-linecap="round" opacity=".6"/><circle cx="62" cy="58" r="4.5" style="fill:var(--bad)"/><circle cx="98" cy="34" r="4" style="fill:var(--gold)"/><circle cx="112" cy="58" r="3.6" style="fill:var(--ink)"/><circle cx="52" cy="22" r="3.6" style="fill:var(--steel)"/><circle cx="80" cy="46" r="2.6" style="fill:var(--ink)"/></svg>';
@@ -189,7 +211,7 @@ function refreshSettings() {
 
 function vData() {
   const n = St.items().length, sn = St.snaps().length;
-  return `${backHead('Данные')}<p class="sub" style="margin:-6px 0 14px">Всё хранится только в этом браузере. Записей: ${n}. Делай копию, чтобы не потерять.</p>
+  return `${backHead('Данные')}<p class="sub" style="margin:-6px 0 14px">Дела лежат на телефоне и в облаке твоего аккаунта. Записей: ${n}. Копия файлом нужна как запасной вариант.</p>
   <div class="panel mlist">${mrow('download', 'Сохранить копию', 'Файл .json, можно перенести на другое устройство', 'export')}${mrow('upload', 'Загрузить копию', 'Добавит дела из файла, повторы пропустит', 'import')}${mrow('copy', 'Копии на телефоне', sn ? `Раз в день, сейчас их ${sn}` : 'Раз в день, пока их нет', 'snaps')}${mrow('today', 'Сроки в календарь', 'Файл .ics: откроется в Календаре и напомнит', 'ics-all')}${mrow('spark', 'Показать пример', 'Добавит тестовые дела, потом их можно удалить', 'demo')}${mrow('trash', 'Удалить всё', 'Очистит список на этом устройстве', 'wipe')}</div>
   <input type="file" id="file" accept="application/json,.json" hidden>`;
 }
@@ -197,7 +219,7 @@ function vAbout() {
   return `${backHead('О приложении')}<div class="panel"><b>Тень</b> — планировщик, который показывает сроки на горизонте и не даёт хвостам копиться. Версия ${APP_VERSION}.</div>
   <div class="sec-head" style="margin-top:22px"><h2 class="h2">Установка на телефон</h2></div>
   <ol class="steps panel"><li><span><b>iPhone.</b> Открой сайт в Safari → «Поделиться» → «На экран Домой».</span></li><li><span><b>Android.</b> Меню Chrome → «Установить приложение».</span></li><li><span>Приложение откроется без адресной строки и будет работать без интернета.</span></li></ol>
-  <div class="panel" style="margin-top:12px;font-size:14px;color:var(--ink-2)"><b style="color:var(--ink)">Где данные.</b> Только на этом устройстве, в браузере. На сервер ничего не отправляется. На iPhone и Android данные не синхронизируются сами: переноси копией.</div>
+  <div class="panel" style="margin-top:12px;font-size:14px;color:var(--ink-2)"><b style="color:var(--ink)">Где данные.</b> На телефоне и в облаке твоего аккаунта: так iPhone и Android видят одни и те же дела. Без сети всё работает, изменения уйдут позже.</div>
   <div style="margin-top:14px"><button class="btn btn-ghost btn-block" data-act="news">Что нового</button></div>`;
 }
 
@@ -409,12 +431,10 @@ function openAI() {
 function openNews() {
   St.setMeta({ seen: APP_VERSION });
   openSheet({ eyebrow: `Версия ${APP_VERSION}`, title: 'Что нового', body: `<ol class="steps">
-    <li><span><b>Новый вид.</b> Тёмный графит и кость, шрифты и плавающая панель — как в «Подходе».</span></li>
-    <li><span><b>Панель-линза.</b> Прижми панель внизу и води пальцем: экраны переключаются на лету.</span></li>
-    <li><span><b>Неделя на «Сегодня».</b> Дни со сроками видны сразу, тап по дню открывает его дела.</span></li>
-    <li><span><b>Смахни влево.</b> Строка удаляется, а «Вернуть» всегда под рукой.</span></li>
-    <li><span><b>Копии на телефоне.</b> Раз в день, «Ещё → Данные». Заодно напомним про файл-копию.</span></li>
-    <li><span><b>Звуки.</b> Тихие, их можно выключить в «Оформлении».</span></li></ol>`, foot: '<button class="btn btn-primary btn-lg btn-block" data-act="close">Понятно</button>' });
+    <li><span><b>Вход по почте.</b> Аккаунт общий с «Подходом»: можно войти им. Письмо с ссылкой подтверждает почту.</span></li>
+    <li><span><b>Синхронизация.</b> Дела одинаковые на iPhone и Android. Без сети всё работает, а изменения уйдут позже.</span></li>
+    <li><span><b>Активность.</b> В «Делах»: карта за 12 недель, тап по дню показывает сделанное.</span></li>
+    <li><span><b>Смахни влево.</b> Строка удаляется, а «Вернуть» всегда под рукой. Копии на телефоне ждут в «Данных».</span></li></ol>`, foot: '<button class="btn btn-primary btn-lg btn-block" data-act="close">Понятно</button>' });
 }
 function openSnaps() {
   const list = St.snaps().slice().reverse();
@@ -492,8 +512,11 @@ const H = {
   snaps: () => openSnaps(),
   'snap-now': () => { St.snapNow(true); openSnaps(); toast('Копия сделана'); },
   'snap-restore': el => { if (!confirm('Вернуть дела на этот день? Текущее состояние тоже сохранится в копиях.')) return; if (St.snapRestore(+el.dataset.i)) { closeSheet(true); render(); toast('Дела возвращены'); } else toast('Не получилось вернуть копию'); },
-  wipe: () => { if (confirm('Удалить все дела на этом устройстве? Копии на телефоне останутся.')) { St.snapNow(true); St.clearAll(); render(); toast('Всё удалено'); } },
+  wipe: () => { if (confirm('Удалить все дела? Они исчезнут и из облака на всех ваших телефонах. Копии на телефоне останутся.')) { St.snapNow(true); St.clearAll(); render(); toast('Всё удалено'); } },
   news: () => openNews(),
+  sync: async () => { toast('Синхронизирую…'); await Auth.syncNow(); toast(Auth.status.state === 'ok' ? 'Синхронизировано' : (Auth.status.err || 'Нет сети')); },
+  'acc-pass': async () => { const a = Auth.acc(); if (!a) return; try { await Auth.resetMail(a.email); toast('Письмо отправлено'); } catch (e) { toast(F.errText(e)); } },
+  'acc-out': () => { if (confirm('Выйти из аккаунта? Дела на телефоне останутся, но войти придётся заново.')) { Auth.signOut(); ensureGate(); } },
   ai: () => { sfx('tap'); openAI(); },
   'ai-agree': () => { St.setMeta({ aiOk: Date.now() }); openAI(); },
   'ai-ctx': () => openCtx(),
@@ -603,9 +626,23 @@ viewEl.addEventListener('pointerup', swEnd); viewEl.addEventListener('pointercan
 /* ───────── смена суток, копии, запуск ───────── */
 let lastDay = today();
 const tick = () => { if (today() !== lastDay) { lastDay = today(); render(); } else if (St.settings().auto) applyAppearance(); St.snapNow(); };
-document.addEventListener('visibilitychange', () => { if (!document.hidden) tick(); });
+document.addEventListener('visibilitychange', () => { if (!document.hidden) { tick(); if (Auth.gateOk()) Auth.syncNow(); } });
 setInterval(tick, 60000);
 
+/* ───────── вход: приложение закрыто без подтверждённой почты ───────── */
+function maybeNews() { if (St.meta().seen !== APP_VERSION && !sheetEl() && !gateOpen()) openNews(); }
+function ensureGate(link) {
+  if (Auth.gateOk() || gateOpen()) return;
+  closeSheet(true);
+  openGate({ link, onDone: () => { Auth.start(); render(); toast('Вход выполнен'); setTimeout(maybeNews, 900); } });
+}
+Auth.onChange(() => { if (!Auth.gateOk()) ensureGate(); else if (ui.view === 'more' && (!ui.sub || ui.sub === 'account')) { ui.enter = false; render(); } });
+Auth.onMerged(() => { if (!sheetEl()) { ui.enter = false; render(); } });
+
 syncSound(); buildTabs(); render();
-setTimeout(() => { St.snapNow(); if (St.meta().seen !== APP_VERSION && !sheetEl()) openNews(); }, 1200);
+const authLink = Auth.takeLink();
+if (authLink && authLink.mode === 'verifyEmail') F.applyOob(authLink.oob).then(() => toast('Почта подтверждена')).catch(e => toast(F.errText(e)));
+ensureGate(authLink);
+Auth.start();
+setTimeout(() => { St.snapNow(); maybeNews(); }, 1200);
 if ('serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('sw.js').catch(() => { });

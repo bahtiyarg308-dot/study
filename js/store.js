@@ -5,7 +5,8 @@ const KEY = 'ten.v1';
 const DEFAULTS = () => ({
   v: 1,
   items: [],
-  meta: { seen: '', lastExport: 0, bannerHide: 0, aiOk: 0 },
+  dead: {},
+  meta: { seen: '', lastExport: 0, bannerHide: 0, aiOk: 0, acc: null, owner: '', syncedAt: 0, dirty: 0 },
   settings: { theme: 'mrak', auto: false, calm: false, accent: 'lime', noirAcc: 'bone', name: '', snd: { on: true, vol: 2 }, ai: { provider: 'gemini', keys: {}, models: {}, base: '', sees: { tasks: true, notes: true, priv: false } } },
 });
 
@@ -18,7 +19,9 @@ function load() {
     const raw = localStorage.getItem(KEY);
     if (raw) {
       const d = JSON.parse(raw), base = DEFAULTS();
-      return { ...base, ...d, meta: { ...base.meta, ...(d.meta || {}) }, settings: { ...base.settings, ...(d.settings || {}), ai: { ...base.settings.ai, ...((d.settings || {}).ai || {}) } }, items: Array.isArray(d.items) ? d.items : [] };
+      const items = Array.isArray(d.items) ? d.items : [];
+      items.forEach(x => { if (!x.u) x.u = Date.parse(x.doneAt || x.createdAt) || Date.now(); }); // отметка изменения нужна для синхронизации
+      return { ...base, ...d, dead: d.dead && typeof d.dead === 'object' ? d.dead : {}, meta: { ...base.meta, ...(d.meta || {}) }, settings: { ...base.settings, ...(d.settings || {}), ai: { ...base.settings.ai, ...((d.settings || {}).ai || {}) } }, items };
     }
   } catch (e) { /* пустое хранилище */ }
   return DEFAULTS();
@@ -28,6 +31,9 @@ function persist() {
   timer = setTimeout(() => { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { /* приватный режим */ } snapNow(); }, 120);
 }
 function emit() { persist(); subs.forEach(f => f()); }
+let itemsHook = null;
+export const onItems = f => { itemsHook = f; };
+function touch() { S.meta.dirty = Date.now(); emit(); if (itemsHook) itemsHook(); }
 
 export const get = () => S;
 export const items = () => S.items;
@@ -40,17 +46,24 @@ export const uid = () => Math.random().toString(36).slice(2, 8) + Date.now().toS
 export function addItem(o) {
   const it = {
     id: uid(), kind: 'task', title: '', due: null, time: null, done: false, doneAt: null, createdAt: new Date().toISOString(),
-    subject: '', est: null, step: '', stepMin: null, remind: null, source: 'manual', priv: false, spent: 0, ...o,
+    subject: '', est: null, step: '', stepMin: null, remind: null, source: 'manual', priv: false, spent: 0, ...o, u: Date.now(),
   };
-  S.items.push(it); emit(); return it;
+  S.items.push(it); touch(); return it;
 }
 export function updateItem(id, patch) {
   const it = S.items.find(x => x.id === id); if (!it) return null;
-  Object.assign(it, patch); emit(); return it;
+  Object.assign(it, patch, { u: Date.now() }); touch(); return it;
 }
-export function removeItem(id) { S.items = S.items.filter(x => x.id !== id); emit(); }
-export function restoreItem(it) { if (!S.items.some(x => x.id === it.id)) { S.items.push(it); emit(); } }
-export function replaceItems(list) { S.items = list; emit(); }
+export function removeItem(id) { S.items = S.items.filter(x => x.id !== id); S.dead[id] = Date.now(); touch(); }
+export function restoreItem(it) { if (!S.items.some(x => x.id === it.id)) { delete S.dead[it.id]; S.items.push({ ...it, u: Date.now() }); touch(); } }
+// заменить список целиком (возврат из копии): пропавшие дела получают метку удаления, чтобы это дошло до других телефонов
+function adopt(list) {
+  const now = Date.now(), keep = new Set(list.map(x => x.id));
+  S.items.forEach(x => { if (!keep.has(x.id)) S.dead[x.id] = now; });
+  list.forEach(x => { x.u = now; delete S.dead[x.id]; });
+  S.items = list;
+}
+export function replaceItems(list) { adopt(list); touch(); }
 
 // ---- копии на телефоне: по одной в день, последние 7 ----
 const SKEY = 'ten.snaps';
@@ -69,11 +82,11 @@ export function snapNow(force) {
 export function snapRestore(i) {
   const x = snaps()[i]; if (!x) return false;
   snapNow(true); // перед восстановлением сохраняем текущее состояние
-  try { S.items = JSON.parse(x.json); emit(); return true; } catch (e) { return false; }
+  try { adopt(JSON.parse(x.json)); touch(); return true; } catch (e) { return false; }
 }
 export function toggleDone(id) {
   const it = S.items.find(x => x.id === id); if (!it) return;
-  it.done = !it.done; it.doneAt = it.done ? new Date().toISOString() : null; emit(); return it;
+  it.done = !it.done; it.doneAt = it.done ? new Date().toISOString() : null; it.u = Date.now(); touch(); return it;
 }
 export function setSettings(patch) { Object.assign(S.settings, patch); emit(); }
 export function setAI(patch) { Object.assign(S.settings.ai, patch); emit(); }
@@ -118,10 +131,34 @@ export function importJSON(text) {
   if (!Array.isArray(d.items)) throw new Error('В файле нет списка дел');
   const ids = new Set(S.items.map(x => x.id));
   let n = 0;
-  for (const it of d.items) if (it && it.title && !ids.has(it.id)) { S.items.push({ kind: 'task', due: null, time: null, done: false, doneAt: null, createdAt: new Date().toISOString(), subject: '', est: null, step: '', stepMin: null, remind: null, source: 'manual', priv: false, spent: 0, ...it, id: it.id || uid() }); n++; }
-  emit(); return n;
+  for (const it of d.items) if (it && it.title && !ids.has(it.id)) { S.items.push({ kind: 'task', due: null, time: null, done: false, doneAt: null, createdAt: new Date().toISOString(), subject: '', est: null, step: '', stepMin: null, remind: null, source: 'manual', priv: false, spent: 0, ...it, id: it.id || uid(), u: Date.now() }); delete S.dead[it.id]; n++; }
+  touch(); return n;
 }
-export function clearAll() { S.items = []; emit(); }
+export function clearAll() { const now = Date.now(); S.items.forEach(x => { S.dead[x.id] = now; }); S.items = []; touch(); }
+/** Смена аккаунта: убрать дела с телефона, не помечая их удалёнными в облаке. */
+export function wipeLocal() { S.items = []; S.dead = {}; S.meta.dirty = 0; emit(); }
+
+// ---- синхронизация между телефонами: по делу побеждает последнее изменение ----
+export const payload = () => ({ items: S.items, dead: S.dead });
+export function mergeRemote(rem) {
+  let changed = false;
+  const now = Date.now(), old = now - 90 * 864e5;
+  for (const [id, t] of Object.entries(rem.dead || {})) if (!(S.dead[id] >= t)) { S.dead[id] = t; changed = true; }
+  const mine = new Map(S.items.map(x => [x.id, x]));
+  for (const r of rem.items || []) {
+    if (!r || !r.id || !r.title) continue;
+    const dead = S.dead[r.id] || 0, l = mine.get(r.id);
+    if (dead && dead >= (r.u || 0)) continue;
+    if (!l) { S.items.push(r); changed = true; }
+    else if ((r.u || 0) > (l.u || 0)) { Object.keys(l).forEach(k => { delete l[k]; }); Object.assign(l, r); changed = true; }
+  }
+  const before = S.items.length;
+  S.items = S.items.filter(x => { const d = S.dead[x.id]; return !(d && d >= (x.u || 0)); });
+  if (S.items.length !== before) changed = true;
+  for (const [id, t] of Object.entries(S.dead)) if (t < old) delete S.dead[id];
+  if (changed) emit();
+  return changed;
+}
 
 export function loadDemo() {
   const t = todayISO(), d = n => addDays(t, n);
