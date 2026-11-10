@@ -5,7 +5,8 @@ const KEY = 'ten.v1';
 const DEFAULTS = () => ({
   v: 1,
   items: [],
-  settings: { theme: 'mrak', auto: false, fog: true, calm: false, ai: { provider: 'gemini', keys: {}, models: {}, base: '', sees: { tasks: true, notes: true, priv: false } } },
+  meta: { seen: '', lastExport: 0, bannerHide: 0, aiOk: 0 },
+  settings: { theme: 'mrak', auto: false, calm: false, accent: 'lime', noirAcc: 'bone', name: '', snd: { on: true, vol: 2 }, ai: { provider: 'gemini', keys: {}, models: {}, base: '', sees: { tasks: true, notes: true, priv: false } } },
 });
 
 let S = load();
@@ -17,20 +18,22 @@ function load() {
     const raw = localStorage.getItem(KEY);
     if (raw) {
       const d = JSON.parse(raw), base = DEFAULTS();
-      return { ...base, ...d, settings: { ...base.settings, ...(d.settings || {}), ai: { ...base.settings.ai, ...((d.settings || {}).ai || {}) } }, items: Array.isArray(d.items) ? d.items : [] };
+      return { ...base, ...d, meta: { ...base.meta, ...(d.meta || {}) }, settings: { ...base.settings, ...(d.settings || {}), ai: { ...base.settings.ai, ...((d.settings || {}).ai || {}) } }, items: Array.isArray(d.items) ? d.items : [] };
     }
   } catch (e) { /* пустое хранилище */ }
   return DEFAULTS();
 }
 function persist() {
   clearTimeout(timer);
-  timer = setTimeout(() => { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { /* приватный режим */ } }, 120);
+  timer = setTimeout(() => { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { /* приватный режим */ } snapNow(); }, 120);
 }
 function emit() { persist(); subs.forEach(f => f()); }
 
 export const get = () => S;
 export const items = () => S.items;
 export const settings = () => S.settings;
+export const meta = () => S.meta;
+export function setMeta(patch) { Object.assign(S.meta, patch); emit(); }
 export const subscribe = f => { subs.add(f); return () => subs.delete(f); };
 export const uid = () => Math.random().toString(36).slice(2, 8) + Date.now().toString(36).slice(-4);
 
@@ -46,6 +49,28 @@ export function updateItem(id, patch) {
   Object.assign(it, patch); emit(); return it;
 }
 export function removeItem(id) { S.items = S.items.filter(x => x.id !== id); emit(); }
+export function restoreItem(it) { if (!S.items.some(x => x.id === it.id)) { S.items.push(it); emit(); } }
+export function replaceItems(list) { S.items = list; emit(); }
+
+// ---- копии на телефоне: по одной в день, последние 7 ----
+const SKEY = 'ten.snaps';
+export function snaps() { try { return JSON.parse(localStorage.getItem(SKEY) || '[]'); } catch (e) { return []; } }
+let snapDay = '';
+export function snapNow(force) {
+  const d = todayISO();
+  if (!force && snapDay === d) return false;
+  const list = snaps();
+  if (!S.items.length) return false;
+  if (!force && list.some(x => x.d === d)) { snapDay = d; return false; }
+  snapDay = d;
+  const next = list.filter(x => x.d !== d).concat({ d, t: Date.now(), n: S.items.length, json: JSON.stringify(S.items) }).slice(-7);
+  try { localStorage.setItem(SKEY, JSON.stringify(next)); return true; } catch (e) { return false; }
+}
+export function snapRestore(i) {
+  const x = snaps()[i]; if (!x) return false;
+  snapNow(true); // перед восстановлением сохраняем текущее состояние
+  try { S.items = JSON.parse(x.json); emit(); return true; } catch (e) { return false; }
+}
 export function toggleDone(id) {
   const it = S.items.find(x => x.id === id); if (!it) return;
   it.done = !it.done; it.doneAt = it.done ? new Date().toISOString() : null; emit(); return it;

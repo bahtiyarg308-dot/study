@@ -39,8 +39,8 @@ export function layout(list, today = todayISO()) {
 export function radarHTML(pts, selId) {
   const [sx1, sy1] = P(170, -124), [sx2, sy2] = P(170, -52);
   let o = `<svg viewBox="0 0 346 346" class="rsvg" role="img" aria-label="Горизонт: дела по срокам"><defs>
-    <radialGradient id="rbg" cx="50%" cy="50%" r="50%"><stop offset="0" style="stop-color:var(--hot);stop-opacity:.2"/><stop offset=".5" style="stop-color:var(--cool);stop-opacity:.07"/><stop offset="1" style="stop-color:var(--cool);stop-opacity:0"/></radialGradient>
-    <linearGradient id="rsw" gradientUnits="userSpaceOnUse" x1="${f(sx1)}" y1="${f(sy1)}" x2="${f(sx2)}" y2="${f(sy2)}"><stop offset="0" style="stop-color:var(--acc);stop-opacity:0"/><stop offset="1" style="stop-color:var(--acc);stop-opacity:.17"/></linearGradient></defs>
+    <radialGradient id="rbg" cx="50%" cy="50%" r="50%"><stop offset="0" style="stop-color:var(--bad);stop-opacity:.12"/><stop offset=".5" style="stop-color:var(--cool);stop-opacity:.07"/><stop offset="1" style="stop-color:var(--cool);stop-opacity:0"/></radialGradient>
+    <linearGradient id="rsw" gradientUnits="userSpaceOnUse" x1="${f(sx1)}" y1="${f(sy1)}" x2="${f(sx2)}" y2="${f(sy2)}"><stop offset="0" style="stop-color:var(--ink);stop-opacity:0"/><stop offset="1" style="stop-color:var(--ink);stop-opacity:.05"/></linearGradient></defs>
     <circle cx="${C}" cy="${C}" r="170" fill="url(#rbg)"/>`;
   RINGS.forEach(([r], i) => { o += `<circle cx="${C}" cy="${C}" r="${r}" fill="none" class="ring" ${i === 3 ? 'stroke-dasharray="2 5"' : ''}/>`; });
   o += `<path d="M${C} 3V343M3 ${C}H343" class="cross"/>`;
@@ -51,7 +51,7 @@ export function radarHTML(pts, selId) {
   pts.filter(p => p.tail).forEach((p, i) => {
     const len = Math.min(-p.dd * 14, 112), [ex, ey] = P(p.r + len, p.ang), [mx, my] = P(p.r + len * .65, p.ang);
     const ox = Math.cos((p.ang + 90) * Math.PI / 180) * 4.5, oy = Math.sin((p.ang + 90) * Math.PI / 180) * 4.5;
-    o += `<defs><linearGradient id="tl${i}" gradientUnits="userSpaceOnUse" x1="${f(p.x)}" y1="${f(p.y)}" x2="${f(ex)}" y2="${f(ey)}"><stop offset="0" style="stop-color:var(--hot);stop-opacity:.95"/><stop offset="1" style="stop-color:var(--hot);stop-opacity:0"/></linearGradient></defs>
+    o += `<defs><linearGradient id="tl${i}" gradientUnits="userSpaceOnUse" x1="${f(p.x)}" y1="${f(p.y)}" x2="${f(ex)}" y2="${f(ey)}"><stop offset="0" style="stop-color:var(--bad);stop-opacity:.95"/><stop offset="1" style="stop-color:var(--bad);stop-opacity:0"/></linearGradient></defs>
     <g class="tailg" style="animation-delay:${-i * 1.7}s"><line x1="${f(p.x)}" y1="${f(p.y)}" x2="${f(ex)}" y2="${f(ey)}" stroke="url(#tl${i})" stroke-width="6" stroke-linecap="round"/>
     <line x1="${f(p.x + ox)}" y1="${f(p.y + oy)}" x2="${f(mx + ox)}" y2="${f(my + oy)}" stroke="url(#tl${i})" stroke-width="1.8" stroke-linecap="round" opacity=".7"/>
     <line x1="${f(p.x - ox)}" y1="${f(p.y - oy)}" x2="${f(mx - ox)}" y2="${f(my - oy)}" stroke="url(#tl${i})" stroke-width="1.8" stroke-linecap="round" opacity=".7"/></g>`;
@@ -59,10 +59,10 @@ export function radarHTML(pts, selId) {
   // точки
   pts.forEach((p, i) => {
     const sel = p.it.id === selId;
-    const c = `var(--${p.kind === 'ink' ? 'ink' : p.kind})`;
+    const c = { hot: 'var(--bad)', warn: 'var(--gold)', ink: 'var(--ink)', cool: 'var(--steel)' }[p.kind];
     if (sel) {
       o += `<path d="M${C} ${C}L${f(p.x)} ${f(p.y)}" class="leader"/>
-      <circle cx="${f(p.x)}" cy="${f(p.y)}" r="14" class="pulse"/><circle cx="${f(p.x)}" cy="${f(p.y)}" r="22" class="pulse p2"/><circle cx="${f(p.x)}" cy="${f(p.y)}" r="7" style="fill:var(--pri)"/>`;
+      <circle cx="${f(p.x)}" cy="${f(p.y)}" r="14" class="pulse"/><circle cx="${f(p.x)}" cy="${f(p.y)}" r="22" class="pulse p2"/><circle cx="${f(p.x)}" cy="${f(p.y)}" r="7" style="fill:var(--accent)"/>`;
     } else {
       o += `<g class="blip ${p.kind}" style="animation-delay:${-(i * 1.3 % 7).toFixed(1)}s"><circle cx="${f(p.x)}" cy="${f(p.y)}" r="9" style="fill:${c};opacity:.18"/><circle cx="${f(p.x)}" cy="${f(p.y)}" r="${p.tail ? 6 : 4.6}" style="fill:${c}"/></g>`;
     }

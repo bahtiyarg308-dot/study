@@ -1,6 +1,6 @@
 // Офлайн: сначала сеть (чтобы обновления доходили сразу), без сети — из кэша.
-const CACHE = 'ten-v2';
-const SHELL = ['./', 'index.html', 'manifest.webmanifest', 'css/app.css', 'css/fonts.css', 'js/app.js', 'js/dates.js', 'js/store.js', 'js/radar.js', 'js/ai.js', 'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png'];
+const CACHE = 'ten-v3';
+const SHELL = ['./', 'index.html', 'manifest.webmanifest', 'css/app.css', 'css/fonts.css', 'js/app.js', 'js/ui.js', 'js/sfx.js', 'js/dates.js', 'js/store.js', 'js/radar.js', 'js/ai.js', 'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png', 'fonts/oswald-cyrillic-wght-normal.woff2', 'fonts/oswald-latin-wght-normal.woff2', 'fonts/rubik-cyrillic-wght-normal.woff2', 'fonts/rubik-latin-wght-normal.woff2', 'fonts/martian-mono-cyrillic-wght-normal.woff2', 'fonts/martian-mono-latin-wght-normal.woff2'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));
