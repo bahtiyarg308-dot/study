@@ -493,3 +493,26 @@ html[data-calm=true] *,html[data-calm=true] *::before,html[data-calm=true] *::af
 .rv-d b{display:inline;font-size:inherit;color:var(--ink);font-weight:600}
 
 .tabbar.noind .tab-ind{opacity:0!important}
+
+/* ───── живые анимации (всё через transform и opacity, отключается в «Тише анимации») ───── */
+.hit{fill:none;stroke-width:1.4;opacity:0;transform-box:fill-box;transform-origin:center;animation:hit 36s linear infinite}
+@keyframes hit{0%{opacity:.9;transform:scale(1)}2.4%{opacity:0;transform:scale(3.6)}100%{opacity:0;transform:scale(3.6)}}
+.gone{fill:none;stroke-width:1.6;transform-box:fill-box;transform-origin:center;pointer-events:none}
+.mc{transition:background-color .5s var(--out)}
+.tm{display:flex;align-items:center;gap:12px;margin-top:12px}
+.tml{flex:none;min-width:96px;text-align:right;font:500 10.5px var(--f-mono);letter-spacing:.04em;text-transform:uppercase;color:var(--muted)}
+.subj.rew .tml,.subj.rew .mn>div:first-child b{color:var(--gold)}
+.tmr{-webkit-appearance:none;appearance:none;flex:1;min-width:0;height:28px;background:transparent;margin:0;touch-action:pan-y}
+.tmr::-webkit-slider-runnable-track{height:3px;border-radius:2px;background:var(--h0)}
+.tmr::-moz-range-track{height:3px;border-radius:2px;background:var(--h0)}
+.tmr::-webkit-slider-thumb{-webkit-appearance:none;width:20px;height:20px;margin-top:-8.5px;border-radius:50%;background:var(--ink);border:3px solid var(--surface);box-shadow:0 0 0 1px var(--line)}
+.tmr::-moz-range-thumb{width:14px;height:14px;border-radius:50%;background:var(--ink);border:3px solid var(--surface);box-shadow:0 0 0 1px var(--line)}
+.tmr:focus-visible{outline:none}.tmr:focus-visible::-webkit-slider-thumb{box-shadow:0 0 0 3px var(--accent-soft)}
+.mc.fl{animation:cellflash 1.1s var(--out) both}
+@keyframes cellflash{0%{transform:scale(2.1);filter:brightness(1.9);box-shadow:0 0 0 0 var(--accent)}45%{box-shadow:0 0 14px 3px color-mix(in oklab,var(--accent) 55%,transparent)}100%{transform:none;filter:none;box-shadow:none}}
+.rv-card.out{animation:rvout .17s ease-in both}
+@keyframes rvout{to{opacity:0;transform:translateX(-22px)}}
+.rv-dots i{transition:background-color .3s}
+.rv-dots i.g0{background:var(--bad)}.rv-dots i.g1{background:var(--gold)}.rv-dots i.g2{background:var(--good)}
+.rv-dots i.pop{animation:cellpop .6s var(--spring) both}
+@keyframes cellpop{0%{transform:scaleY(3.4);filter:brightness(1.9)}100%{transform:none;filter:none}}

@@ -5,6 +5,8 @@ import { isTail } from './store.js';
 const C = 173, RINGS = [[40, 'СЕГОДНЯ'], [90, '3 ДНЯ'], [135, 'НЕДЕЛЯ'], [170, 'МЕСЯЦ']];
 const P = (r, a) => { const t = a * Math.PI / 180; return [C + r * Math.cos(t), C + r * Math.sin(t)]; };
 const f = n => n.toFixed(1);
+/** Через сколько секунд луч развёртки (36 с на оборот, 10° в секунду) дойдёт до точки: вспышка совпадает с линией. */
+const hitAt = p => { const el = (Date.now() / 1000) % 32, a = Math.atan2(p.y - C, p.x - C) * 180 / Math.PI; return ((((a + 52 - el * 10) % 360) + 360) % 360) / 10; };
 
 function radius(dd) {
   if (dd <= 0) return 28;
@@ -64,7 +66,7 @@ export function radarHTML(pts, selId) {
       o += `<path d="M${C} ${C}L${f(p.x)} ${f(p.y)}" class="leader"/>
       <circle cx="${f(p.x)}" cy="${f(p.y)}" r="14" class="pulse"/><circle cx="${f(p.x)}" cy="${f(p.y)}" r="22" class="pulse p2"/><circle cx="${f(p.x)}" cy="${f(p.y)}" r="7" style="fill:var(--accent)"/>`;
     } else {
-      o += `<g class="blip ${p.kind}" style="animation-delay:${-(i * 1.3 % 7).toFixed(1)}s"><circle cx="${f(p.x)}" cy="${f(p.y)}" r="9" style="fill:${c};opacity:.18"/><circle cx="${f(p.x)}" cy="${f(p.y)}" r="${p.tail ? 6 : 4.6}" style="fill:${c}"/></g>`;
+      o += `<g class="blip ${p.kind}" data-id="${p.it.id}" style="animation-delay:${-(i * 1.3 % 7).toFixed(1)}s"><circle class="hit" cx="${f(p.x)}" cy="${f(p.y)}" r="6" style="stroke:${c};animation-delay:${hitAt(p).toFixed(2)}s"/><circle cx="${f(p.x)}" cy="${f(p.y)}" r="9" style="fill:${c};opacity:.18"/><circle cx="${f(p.x)}" cy="${f(p.y)}" r="${p.tail ? 6 : 4.6}" style="fill:${c}"/></g>`;
     }
   });
   o += `<circle cx="${C}" cy="${C}" r="9" fill="none" class="ring"/><circle cx="${C}" cy="${C}" r="3.5" style="fill:var(--ink)"/>`;

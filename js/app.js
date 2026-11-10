@@ -13,6 +13,9 @@ const APP_VERSION = '2.3';
 const ui = { view: 'today', sub: null, filter: 'all', lmode: 'list', q: '', day: null, sel: null, enter: true, models: {} };
 const viewEl = $('#view'), tabsEl = $('#tabs');
 const today = () => D.todayISO();
+/** Тихие анимации на JS выключаются там же, где и CSS: «Тише анимации» и системная настройка. */
+const calm = () => document.documentElement.dataset.calm === 'true' || matchMedia('(prefers-reduced-motion: reduce)').matches;
+const DAYMS = 864e5;
 const when = it => it.due ? `${D.fmtDay(it.due)}${it.time ? ' · ' + it.time : ''}` : 'без срока';
 const nTasks = n => `${n} ${D.plural(n, ['дело', 'дела', 'дел'])}`;
 const nTails = n => `${n} ${D.plural(n, ['хвост', 'хвоста', 'хвостов'])}`;
@@ -189,6 +192,16 @@ const topicRow = x => {
   const r = Mem.rec(x.mem), cls = r === null ? '' : r < Mem.FADE_AT ? 'fade' : 'ok';
   return `<div class="trow"><button class="tr-b" data-act="topic" data-id="${x.id}"><b>${esc(x.title)}</b><small>${r === null ? 'не начато' : r < Mem.FADE_AT ? 'тускнеет' : 'свежо'}${x.key ? ' · есть ответ' : ''}</small></button><div class="tr-v ${cls}"><span>${r === null ? '—' : pc(r)}</span><i style="--w:${r === null ? 0 : Math.round(r * 100)}%"></i></div></div>`;
 };
+/** Перемотка времени: клетки гаснут так, как тема забывается без повторов. */
+function rewind(inp) {
+  const sec = inp.closest('.subj'), sub = memSubs().find(x => x.key === inp.dataset.k); if (!sec || !sub) return;
+  const d = +inp.value, T = Date.now() + d * DAYMS, ex = sub.due && !Mem.stats(sub).past;
+  sec.querySelectorAll('.mc').forEach((c, i) => { const x = sub.topics[i]; if (x) c.className = 'mc l' + Mem.level(Mem.rec(x.mem, T)); });
+  sec.querySelector('.mn-v').textContent = pc(Mem.stats(sub, T).now);
+  sec.querySelector('.mn-l').textContent = d ? `свежесть через ${D.days(d)}` : 'свежесть сейчас';
+  sec.querySelector('.tml').textContent = !d ? 'сейчас' : ex && d === +inp.max ? 'день экзамена' : `через ${D.days(d)}`;
+  sec.classList.toggle('rew', d > 0);
+}
 function vMemory() {
   const subs = orderedSubs();
   if (!subs.length) return `<div class="empty"><h3>Что хочешь запомнить?</h3><p>Темы к экзамену, главы книги, язык, программирование. Выпиши по одной в строке, а Тень будет возвращать их, пока они не забылись, и покажет, что уже тускнеет.</p><button class="btn btn-primary" data-act="topics-add">${ic('plus')}Добавить темы</button><br><button class="link" data-act="demo">Показать пример</button></div>`;
@@ -203,8 +216,9 @@ function vMemory() {
     const parts = [st.fade ? `тускнеет ${st.fade}` : '', st.fresh ? `не начато ${st.fresh}` : ''].filter(Boolean).join(' · ') || 'Всё свежо';
     const head = both && s.area !== lastArea ? `<div class="sec-head" style="margin:${lastArea ? 22 : 4}px 0 -4px"><h2 class="h2">${s.area === 'uni' ? 'Учёба' : 'Для себя'}</h2></div>` : ''; lastArea = s.area;
     return head + `<section class="panel subj"><div class="sj-h"><div class="grow"><b>${esc(s.name)}</b><small>${examLabel(s, st)}</small></div><button class="icon-btn sm" data-act="subj-edit" data-k="${esc(s.key)}" aria-label="Изменить">${ic('more')}</button></div>
-      <div class="mn"><div><b>${pc(st.now)}</b><span>свежесть сейчас</span></div>${st.exam !== null ? `<div class="${tone}"><b>${pc(st.exam)}</b><span>${s.area === 'self' ? 'к цели без повторов' : 'к экзамену без повторов'}</span></div>` : `<div><b>${st.n - st.fresh}/${st.n}</b><span>тем начато</span></div>`}</div>
-      <div class="mstrip" aria-hidden="true">${s.topics.map(x => `<i class="mc l${Mem.level(Mem.rec(x.mem))}"></i>`).join('')}</div>
+      <div class="mn"><div><b class="mn-v">${pc(st.now)}</b><span class="mn-l">свежесть сейчас</span></div>${st.exam !== null ? `<div class="${tone}"><b>${pc(st.exam)}</b><span>${s.area === 'self' ? 'к цели без повторов' : 'к экзамену без повторов'}</span></div>` : `<div><b>${st.n - st.fresh}/${st.n}</b><span>тем начато</span></div>`}</div>
+      <div class="mstrip" aria-hidden="true">${s.topics.map(x => `<i class="mc l${Mem.level(Mem.rec(x.mem))}${ui.flash && ui.flash.has(x.id) ? ' fl' : ''}"></i>`).join('')}</div>
+      ${st.fresh < st.n ? `<div class="tm"><input class="tmr" type="range" min="0" max="${s.due && !st.past ? Math.max(1, Math.min(60, D.diffDays(today(), s.due))) : 14}" step="1" value="0" data-k="${esc(s.key)}" aria-label="Перемотка времени: что останется в памяти, если не повторять"><span class="tml">сейчас</span></div>` : ''}
       <p class="sub" style="margin-top:10px">${parts}</p>
       <details class="more"${subs.length === 1 ? ' open' : ''}><summary>Темы · ${s.topics.length}<span>${ic('chev')}</span></summary><div class="trows">${s.topics.map(x => swipeRow(topicRow(x), x.id)).join('')}</div></details></section>`;
   }).join('');
@@ -298,16 +312,26 @@ function startReview(ids) {
   rv = { q: list, i: 0, t0: Date.now(), show: false, res: [], before: readiness() };
   openSheet({ cls: 'rev', title: '…', body: '', foot: ' ', onOpen: () => paintReview() });
 }
+/** Цифры «было → стало» не прыгают, а досчитываются. */
+function countUp(root) {
+  if (calm()) return;
+  root.querySelectorAll('b[data-to]').forEach(b => {
+    const f = +b.dataset.from, t = +b.dataset.to, t0 = performance.now();
+    const step = now => { const k = Math.min(1, (now - t0) / 900), e = 1 - Math.pow(1 - k, 3); b.textContent = Math.round(f + (t - f) * e) + '%'; if (k < 1) requestAnimationFrame(step); };
+    b.textContent = f + '%'; requestAnimationFrame(step);
+  });
+}
 function paintReview() {
   const sh = sheetEl(); if (!sh || !rv) return;
   const body = sh.querySelector('.sheet-body'), foot = sh.querySelector('.sheet-foot'), h2 = sh.querySelector('h2');
   const setHead = (e, t) => { let el = sh.querySelector('.eyebrow'); if (!el) { el = document.createElement('div'); el.className = 'eyebrow'; h2.before(el); } el.textContent = e; h2.textContent = t; };
   if (rv.i >= rv.q.length) {
     const after = readiness(), n = rv.res.length, c = [0, 0, 0]; rv.res.forEach(r => { c[r.g]++; });
-    const lines = Object.entries(after).filter(([k]) => rv.res.some(r => skey(St.get_(r.id)?.subject) === k)).map(([k, a]) => { const b = rv.before[k]; return `<div class="snap"><div><b>${esc(a.name)}</b><small>${a.exam ? 'готовность к экзамену' : 'свежесть сейчас'}</small></div><span class="rv-d">${pc(b ? b.v : 0)} → <b>${pc(a.v)}</b></span></div>`; }).join('');
+    const lines = Object.entries(after).filter(([k]) => rv.res.some(r => skey(St.get_(r.id)?.subject) === k)).map(([k, a]) => { const b = rv.before[k]; return `<div class="snap"><div><b>${esc(a.name)}</b><small>${a.exam ? 'готовность к экзамену' : 'свежесть сейчас'}</small></div><span class="rv-d">${pc(b ? b.v : 0)} → <b data-from="${Math.round((b ? b.v : 0) * 100)}" data-to="${Math.round(a.v * 100)}">${pc(a.v)}</b></span></div>`; }).join('');
     const left = memPlan().queue.length, nf = Mem.nextFade(memSubs());
     setHead('Готово', `Освежено: ${n}`);
     body.innerHTML = `<div class="rv-card"><div class="chips" style="margin-bottom:8px"><span class="chip ok">Уверенно ${c[2]}</span><span class="chip warn">С трудом ${c[1]}</span><span class="chip hot">Не вспомнил ${c[0]}</span></div>${lines}<p class="sub">${left ? `В плане на сегодня ещё ${left}.` : nf ? `Следующее освежение ${whenTs(nf)}.` : 'На сегодня всё.'}</p></div>`;
+    countUp(body);
     foot.innerHTML = `${left ? `<button class="btn btn-ghost" data-act="mem-more">Ещё ${Math.min(left, 10)}</button>` : ''}<button class="btn btn-primary" data-act="close">Закрыть</button>`;
     return;
   }
@@ -315,7 +339,7 @@ function paintReview() {
   setHead(`${x.subject || 'Тема'} · ${rv.i + 1} из ${rv.q.length}`, x.title);
   body.innerHTML = `<div class="rv-card"><p class="rv-q">Расскажи вслух или набросай по памяти, как будто объясняешь новичку. Без подсказок.</p>
     ${x.key ? (rv.show ? `<div class="rv-key"><span class="lbl" style="margin-top:0">Ответ</span>${esc(x.key)}</div>` : `<button class="btn btn-ghost btn-sm" data-act="rv-key">Показать ответ</button>`) : ''}
-    <div class="rv-dots" aria-hidden="true">${rv.q.map((_, k) => `<i class="${k < rv.i ? 'd' : k === rv.i ? 'c' : ''}"></i>`).join('')}</div></div>`;
+    <div class="rv-dots" aria-hidden="true">${rv.q.map((_, k) => `<i class="${k < rv.i ? 'd g' + (rv.res[k] ? rv.res[k].g : 1) : k === rv.i ? 'c' : ''}${k === rv.i - 1 && rv.pop ? ' pop' : ''}"></i>`).join('')}</div></div>`;
   foot.innerHTML = Mem.GRADES.map(([l, g]) => `<button class="btn ${g === 2 ? 'btn-primary' : g === 0 ? 'btn-ghost' : ''}" data-act="rv-g" data-g="${g}">${l}</button>`).join('');
 }
 
@@ -413,11 +437,26 @@ function moveInd() {
   $$('.tab', tabsEl).forEach(b => b.setAttribute('aria-current', b.dataset.to === ui.view ? 'page' : 'false'));
   if (!indReady) { indReady = true; requestAnimationFrame(() => $('#tind')?.classList.add('ready')); }
 }
+/** Радар: когда дело закрыто или перенесено, точки плавно переезжают, а ушедшая гаснет кольцом. */
+function radarFx() {
+  if (ui.view !== 'horizon') { ui.rpos = null; return; }
+  const pts = layout(St.items(), today()), old = ui.rpos;
+  ui.rpos = Object.fromEntries(pts.map(p => [p.it.id, { x: p.x, y: p.y, tail: p.tail }]));
+  const svg = $('#radar svg'); if (!old || !svg || calm()) return;
+  $$('#radar .blip[data-id]').forEach(g => { const o = old[g.dataset.id], n = ui.rpos[g.dataset.id]; if (o && n && Math.hypot(o.x - n.x, o.y - n.y) > 0.5) g.animate([{ transform: `translate(${o.x - n.x}px,${o.y - n.y}px)` }, { transform: 'translate(0,0)' }], { duration: 750, easing: 'cubic-bezier(.2,.8,.2,1)' }); });
+  Object.entries(old).forEach(([id, o]) => {
+    if (ui.rpos[id]) return;
+    const c = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    c.setAttribute('cx', o.x); c.setAttribute('cy', o.y); c.setAttribute('r', 6); c.setAttribute('class', 'gone'); c.style.stroke = o.tail ? 'var(--bad)' : 'var(--ink)';
+    svg.append(c);
+    c.animate([{ transform: 'scale(1)', opacity: .9 }, { transform: 'scale(5)', opacity: 0 }], { duration: 900, easing: 'ease-out' }).onfinish = () => c.remove();
+  });
+}
 function render() {
   applyAppearance();
   viewEl.className = 'main' + (ui.enter ? ' enter' : '');
   viewEl.innerHTML = V[ui.view]();
-  ui.enter = false; moveInd();
+  ui.enter = false; moveInd(); radarFx();
 }
 function go(to, sub = null, quiet) { ui.view = to; ui.sub = sub; ui.enter = true; render(); window.scrollTo(0, 0); if (!quiet) sfx('tap'); }
 
@@ -608,7 +647,7 @@ const H = {
   add: () => openEditor(),
   edit: el => { closeSheet(true); openEditor(el.dataset.id); },
   open: el => { const it = St.get_(el.dataset.id); if (!it) return; closeOpenSwipes(); it.kind === 'note' ? openEditor(it.id) : openDetail(it.id); },
-  close: () => { closeSheet(); if (rv) { rv = null; ui.enter = false; render(); } },
+  close: () => { const ids = rv ? rv.res.map(r => r.id) : []; closeSheet(); if (rv) { rv = null; ui.enter = false; ui.flash = new Set(ids); render(); ui.flash = null; } },
   quick: () => go('more'),
   toggle: el => {
     const row = el.closest('.jr'), it = St.get_(el.dataset.id);
@@ -633,14 +672,16 @@ const H = {
   topic: el => { closeOpenSwipes(); openTopic(el.dataset.id); },
   'topic-save': el => { St.updateItem(el.dataset.id, { key: ($('#tkey')?.value || '').trim().slice(0, 600) }); closeSheet(); ui.enter = false; render(); toast('Сохранено'); },
   'topic-check': el => { const x = St.get_(el.dataset.id), k = ($('#tkey')?.value ?? '').trim().slice(0, 600); closeSheet(true); if (!x) return; if (k !== (x.key || '')) St.updateItem(x.id, { key: k }); startReview([x.id]); },
-  'rv-key': () => { if (rv) { rv.show = true; sfx('open'); paintReview(); } },
+  'rv-key': () => { if (rv) { rv.show = true; rv.pop = false; sfx('open'); paintReview(); } },
   'rv-g': el => {
-    if (!rv) return; const g = +el.dataset.g, id = rv.q[rv.i];
+    if (!rv || rv.lock) return; const g = +el.dataset.g, id = rv.q[rv.i];
     const sec = Math.min(240, Math.max(8, (Date.now() - rv.t0) / 1000)), ms = St.settings().memSec || 90;
     St.setSettings({ memSec: Math.round(ms * 0.75 + sec * 0.25) });
-    St.reviewTopic(id, g); rv.res.push({ id, g }); rv.i++; rv.show = false; rv.t0 = Date.now();
-    sfx(g === 2 ? 'done' : g === 1 ? 'chip' : 'tap'); buzz(8); paintReview();
-    if (rv.i >= rv.q.length) { ui.enter = false; render(); }
+    St.reviewTopic(id, g); rv.res.push({ id, g }); rv.i++; rv.show = false; rv.t0 = Date.now(); rv.pop = true; rv.lock = true;
+    sfx(g === 2 ? 'done' : g === 1 ? 'chip' : 'tap'); buzz(8);
+    const next = () => { if (!rv) return; rv.lock = false; paintReview(); if (rv.i >= rv.q.length) { ui.enter = false; render(); } };
+    const card = $('.sheet .rv-card');
+    if (card && !calm()) { card.classList.add('out'); setTimeout(next, 170); } else next();
   },
   lmode: el => { ui.lmode = el.dataset.m; ui.enter = false; render(); sfx('tap'); },
   hday: el => { sfx('tap'); openDay(el.dataset.d); },
@@ -722,7 +763,7 @@ document.addEventListener('change', e => {
   const file = e.target.files[0]; if (!file) return;
   file.text().then(t => { try { const n = St.importJSON(t); render(); toast(`Загружено дел: ${n}`); } catch (err) { toast('Не получилось прочитать файл'); } });
 });
-document.addEventListener('input', e => { if (e.target.id === 'qs') { ui.q = e.target.value; const r = $('#lres'); if (r) r.innerHTML = listBody(); } });
+document.addEventListener('input', e => { if (e.target.classList && e.target.classList.contains('tmr')) { rewind(e.target); return; } if (e.target.id === 'qs') { ui.q = e.target.value; const r = $('#lres'); if (r) r.innerHTML = listBody(); } });
 document.addEventListener('keydown', e => {
   if (e.key === 'Enter' && !e.shiftKey && e.target.id === 'aq') { e.preventDefault(); ask(e.target.value); return; }
   if (e.key === 'Escape') { closeSheet(); }
