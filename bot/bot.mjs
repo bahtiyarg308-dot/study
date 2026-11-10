@@ -82,55 +82,56 @@ export async function saveBot() {
 const mark = () => { S.botDirty = true; };
 
 /* ───────── что показываем ───────── */
+// Оформление: без значков в тексте, только типографика: жирные заголовки, цитаты для списков, время моноширинным.
 const open = () => St.items().filter(x => x.kind === 'task' && !x.done);
-const whenText = (it, t) => (!it.due ? 'без срока' : St.isTail(it, t) ? `просрочено на ${D.days(-St.daysTo(it, t))}` : (it.due === t ? 'сегодня' : D.rel(it.due, t)) + (it.time ? ` в ${it.time}` : ''));
-const line = (it, t) => `${St.isTail(it, t) ? '🔴' : '•'} <b>${esc(it.title)}</b>\n     <i>${esc(whenText(it, t))}${it.subject ? ' · ' + esc(it.subject) : ''}</i>`;
-const doneRows = (list, v) => list.slice(0, 6).map(it => [btn('✅ ' + cut(it.title, 20), `d:${it.id}:${v}`), btn('→ завтра', `z:${it.id}:${v}`)]);
+const quote = s => `<blockquote>${s}</blockquote>`;
+const tm = it => (it.time ? `<code>${it.time}</code>  ` : '');
+const sub = it => (it.subject ? ` · <i>${esc(it.subject)}</i>` : '');
+const itemLine = it => `${tm(it)}${esc(it.title)}${sub(it)}`;
+const tailLine = (it, t) => `${esc(it.title)} · <i>просрочено ${D.days(-St.daysTo(it, t))}</i>`;
+const dayName = (d, t) => (d === t ? 'Сегодня' : d === D.addDays(t, 1) ? 'Завтра' : D.fmtDay(d));
+const whenText = (it, t) => (!it.due ? 'без срока' : St.isTail(it, t) ? `просрочено на ${D.days(-St.daysTo(it, t))}` : (it.due === t ? 'сегодня' : D.rel(it.due, t)) + (it.time ? `, ${it.time}` : ''));
+const doneRows = (list, v) => list.slice(0, 4).map(it => [btn('✓ ' + cut(it.title, 18), `d:${it.id}:${v}`), btn('Завтра', `z:${it.id}:${v}`)]);
 const memSubs = () => Mem.subjects(St.items());
 const memPlan = () => Mem.plan(memSubs(), Date.now(), St.settings().memSec || 90);
 const tails = t => open().filter(x => St.isTail(x, t)).sort((a, b) => a.due.localeCompare(b.due));
 const todays = t => open().filter(x => x.due === t).sort((a, b) => (a.time || '99').localeCompare(b.time || '99'));
 const nCards = n => `${n} ${D.plural(n, ['карточка', 'карточки', 'карточек'])}`;
+const bottom = n => [...(n ? [btn(`Память · ${n}`, 'mem')] : []), appBtn('Открыть Тень')];
 
 function viewToday(t, head = 'Сегодня') {
-  const tl = tails(t), td = todays(t), pl = memPlan(), list = [...tl, ...td];
-  let text = `<b>${head}</b> · ${esc(D.fmtDay(t))}\n`;
-  if (tl.length) text += `\n<b>Хвосты</b>\n${tl.slice(0, 6).map(x => line(x, t)).join('\n')}\n`;
-  if (td.length) text += `\n<b>На сегодня</b>\n${td.slice(0, 8).map(x => line(x, t)).join('\n')}\n`;
-  if (!list.length) text += '\nЧисто: ни хвостов, ни дел на сегодня. Напиши дело обычным текстом, и я добавлю.\n';
-  if (pl.queue.length) text += `\n🧠 Память: ${nCards(pl.queue.length)}, около ${pl.mins} мин`;
-  const rows = doneRows(list, 't');
-  if (pl.queue.length) rows.push([btn(`🧠 Освежить память · ${pl.queue.length}`, 'mem')]);
-  rows.push([appBtn('Открыть приложение')]);
-  return { text, ...kb(rows) };
+  const tl = tails(t), td = todays(t), pl = memPlan(), list = [...tl, ...td], parts = [];
+  if (tl.length) parts.push(`<b>Хвосты</b>\n${quote(tl.slice(0, 6).map(x => tailLine(x, t)).join('\n'))}`);
+  if (td.length) parts.push(`<b>Дела</b>\n${quote(td.slice(0, 8).map(itemLine).join('\n'))}`);
+  let text = `<b>${head}</b>\n<i>${esc(D.fmtDay(t))}</i>\n\n${parts.length ? parts.join('\n') : 'На сегодня чисто. Напиши дело текстом, и я его добавлю.'}`;
+  if (pl.queue.length) text += `${parts.length ? '\n' : '\n\n'}Память: ${nCards(pl.queue.length)}, около ${pl.mins} мин`;
+  return { text, ...kb([...doneRows(list, 't'), bottom(pl.queue.length)]) };
 }
 function viewSoon(t) {
   const l = open().filter(x => x.due && x.due > t && D.diffDays(t, x.due) <= 14).sort((a, b) => a.due.localeCompare(b.due) || (a.time || '').localeCompare(b.time || ''));
-  if (!l.length) return { text: 'На ближайшие две недели сроков нет.', ...kb([[appBtn('Открыть приложение')]]) };
-  return { text: `<b>Ближайшие сроки</b>\n\n${l.slice(0, 12).map(x => line(x, t)).join('\n')}${l.length > 12 ? `\n\n…и ещё ${l.length - 12}` : ''}`, ...kb([...doneRows(l, 's'), [appBtn('Открыть приложение')]]) };
+  if (!l.length) return { text: 'На ближайшие две недели сроков нет.', ...kb([[appBtn('Открыть Тень')]]) };
+  const days = [...new Set(l.map(x => x.due))].slice(0, 6);
+  return { text: `<b>Ближайшие сроки</b>\n\n${days.map(d => `<b>${esc(dayName(d, t))}</b>\n${quote(l.filter(x => x.due === d).map(itemLine).join('\n'))}`).join('\n')}`, ...kb([...doneRows(l, 's'), [appBtn('Открыть Тень')]]) };
 }
 function viewTails(t) {
   const l = tails(t);
   if (!l.length) return { text: 'Хвостов нет. Так держать.' };
-  return { text: `<b>Хвосты</b> · ${l.length}\n\n${l.slice(0, 10).map(x => line(x, t)).join('\n')}`, ...kb(doneRows(l, 'x')) };
+  return { text: `<b>Хвосты</b>  <i>${l.length}</i>\n${quote(l.slice(0, 10).map(x => tailLine(x, t)).join('\n'))}`, ...kb(doneRows(l, 'x')) };
 }
 const rerender = { t: viewToday, s: viewSoon, x: viewTails };
 
-/* память: карточки по одной, состояние хранится в самих темах */
-function card(x, reveal, left) {
-  const text = `<b>${esc(x.title)}</b>${x.subject ? `\n<i>${esc(x.subject)}</i>` : ''}\n\nРасскажи вслух или набросай по памяти. Без подсказок.${reveal && x.key ? `\n\n<b>Ответ:</b> ${esc(x.key)}` : ''}\n\n<i>В плане: ${left}</i>`;
-  const rows = [];
-  if (x.key && !reveal) rows.push([btn('Показать ответ', `rk:${x.id}`)]);
-  rows.push(Mem.GRADES.map(([l, g]) => btn(l, `rv:${x.id}:${g}`)));
-  return { text, ...kb(rows) };
+/* память: карточки по одной, ответ скрыт «спойлером» (тап открывает), состояние хранится в самих темах */
+function card(x, left) {
+  const text = `<b>${esc(x.title)}</b>${x.subject ? `\n<i>${esc(x.subject)}</i>` : ''}\n\nРасскажи вслух или набросай по памяти, потом оцени себя.${x.key ? `\n\n<b>Ответ</b>\n<tg-spoiler>${esc(x.key)}</tg-spoiler>` : ''}\n\n<i>Осталось в плане: ${left}</i>`;
+  return { text, ...kb([Mem.GRADES.map(([l, g]) => btn(l, `rv:${x.id}:${g}`))]) };
 }
 async function nextCard(chat, mid) {
   const q = memPlan().queue;
   if (!q.length) {
-    const nf = Mem.nextFade(memSubs()), text = `🧠 Память освежена.${nf ? ` Следующее освежение ${D.rel(D.iso(new Date(nf)), D.todayISO())}.` : ''}`;
-    return mid ? edit(chat, mid, text) : send(chat, text);
+    const nf = Mem.nextFade(memSubs()), text = `Память освежена.${nf ? ` Следующее освежение ${D.rel(D.iso(new Date(nf)), D.todayISO())}.` : ''}`;
+    return mid ? edit(chat, mid, text, { reply_markup: { inline_keyboard: [] } }) : send(chat, text);
   }
-  const c = card(q[0].x, false, q.length);
+  const c = card(q[0].x, q.length);
   return mid ? edit(chat, mid, c.text, { reply_markup: c.reply_markup }) : send(chat, c.text, { reply_markup: c.reply_markup });
 }
 
@@ -140,13 +141,13 @@ const validTz = z => { try { new Intl.DateTimeFormat('ru', { timeZone: z }); ret
 function viewSettings() {
   const b = S.bot, chk = on => (on ? '✓ ' : '');
   return {
-    text: `<b>Настройки</b>\n\nУтренняя сводка: ${b.digest ? b.digest + ':00' : 'выключена'}\nЧасовой пояс: ${esc(b.tz || 'не выбран')}`,
+    text: `<b>Настройки</b>\n\nУтренняя сводка  <code>${b.digest ? b.digest + ':00' : 'выкл'}</code>\nЧасовой пояс  <code>${esc(b.tz || 'не выбран')}</code>`,
     ...kb([[7, 8, 9, 10].map(h => btn(`${chk(b.digest === h)}${h}:00`, `c:dg:${h}`)).concat(btn(`${chk(!b.digest)}Выкл`, 'c:dg:0')),
-      [btn(`${b.eve ? '✅' : '⬜️'} Вечером про завтра`, 'c:ev')], [btn(`${b.timed ? '✅' : '⬜️'} За 30 минут до дела`, 'c:tm')],
-      [btn(b.on ? '🔔 Уведомления включены' : '🔕 Тишина', 'c:on')], [btn(`🌍 ${b.tz || 'Выбрать часовой пояс'}`, 'c:tz')]]),
+      [btn(`Вечер про завтра · ${b.eve ? 'вкл' : 'выкл'}`, 'c:ev')], [btn(`За 30 минут до дела · ${b.timed ? 'вкл' : 'выкл'}`, 'c:tm')],
+      [btn(b.on ? 'Уведомления включены' : 'Тишина: уведомления выключены', 'c:on')], [btn(`Часовой пояс: ${b.tz || 'выбрать'}`, 'c:tz')]]),
   };
 }
-const HELP = `<b>Тень</b>: сроки и память, вместе с приложением.\n\nПросто напиши дело: <i>сдать лабу в пятницу в 18:00</i>. Несколько дел можно с новой строки.\n\n/today сегодня и хвосты\n/soon ближайшие сроки\n/memory освежить темы\n/settings сводка, напоминания, часовой пояс\n/app открыть приложение`;
+const HELP = `<b>Тень</b>\nСроки и память вместе с приложением.\n\nПиши дело как есть: <i>сдать лабу в пятницу в 18:00</i>. Несколько дел можно с новой строки.\n\n${quote('/today  сегодня и хвосты\n/soon  ближайшие сроки\n/memory  освежить темы\n/settings  сводка и напоминания\n/app  открыть приложение')}`;
 
 /* ───────── входящие ───────── */
 async function addText(chat, text) {
@@ -154,7 +155,7 @@ async function addText(chat, text) {
   if (!items.length) return send(chat, 'Не вижу дела в этом сообщении. Напиши, например: <i>сдать лабу в пятницу в 18:00</i>');
   const t = D.todayISO(), made = items.slice(0, 20).map(p => St.addItem({ title: p.title, due: p.due, time: p.due ? p.time : null, source: 'telegram' }));
   const key = Date.now().toString(36); S.bot.undo[key] = made.map(x => x.id); mark();
-  return send(chat, `Добавил${made.length > 1 ? ` ${made.length}` : ''}:\n${made.map(x => `• <b>${esc(x.title)}</b> · <i>${esc(whenText(x, t))}</i>`).join('\n')}`, kb([[btn('↩️ Отменить', `u:${key}`)]]));
+  return send(chat, `<b>Добавлено</b>\n${made.map(x => `${esc(x.title)}  <i>${esc(whenText(x, t))}</i>`).join('\n')}`, kb([[btn('Отменить', `u:${key}`)]]));
 }
 async function onMessage(m) {
   const chat = m.chat.id, text = (m.text || '').trim();
@@ -162,17 +163,17 @@ async function onMessage(m) {
   const t = D.todayISO();
   if (text[0] === '/') {
     const [cmd, ...rest] = text.split(/\s+/), c = cmd.slice(1).split('@')[0].toLowerCase(), arg = rest.join(' ');
-    if (c === 'start') return S.bot.tz ? send(chat, HELP) : send(chat, `Привет! Я бот «Тени». Чтобы напоминания приходили вовремя, выбери часовой пояс:`, kb(zoneRows()));
+    if (c === 'start') return S.bot.tz ? send(chat, HELP) : send(chat, 'Привет. Выбери часовой пояс, чтобы напоминания приходили вовремя.', kb(zoneRows()));
     if (c === 'help') return send(chat, HELP);
     if (c === 'today') { const v = viewToday(t); return send(chat, v.text, { reply_markup: v.reply_markup }); }
     if (c === 'soon') { const v = viewSoon(t); return send(chat, v.text, { reply_markup: v.reply_markup }); }
     if (c === 'tails') { const v = viewTails(t); return send(chat, v.text, { reply_markup: v.reply_markup }); }
     if (c === 'memory') return nextCard(chat);
     if (c === 'settings') { const v = viewSettings(); return send(chat, v.text, { reply_markup: v.reply_markup }); }
-    if (c === 'app') return send(chat, 'Приложение откроется прямо в Telegram.', kb([[appBtn('Открыть «Тень»')]]));
+    if (c === 'app') return send(chat, 'Приложение откроется прямо в Telegram.', kb([[appBtn('Открыть Тень')]]));
     if (c === 'add') return arg ? addText(chat, arg) : send(chat, 'Напиши дело после команды или просто отправь его текстом.');
     if (c === 'tz') {
-      if (arg && validTz(arg)) { S.bot.tz = arg; mark(); applyTz(); return send(chat, `Часовой пояс: ${esc(arg)}`); }
+      if (arg && validTz(arg)) { S.bot.tz = arg; mark(); applyTz(); return send(chat, `Часовой пояс: <code>${esc(arg)}</code>`); }
       return send(chat, 'Выбери из списка или напиши, например, <code>/tz Asia/Tashkent</code>', kb(zoneRows()));
     }
     return send(chat, HELP);
@@ -187,21 +188,20 @@ async function onCallback(cq) {
     if (!it) { await ack('Такого дела уже нет'); return; }
     if (a === 'd') { if (!it.done) St.toggleDone(x); } else St.updateItem(x, { due: D.addDays(t, 1) });
     await ack(a === 'd' ? 'Готово' : 'Перенёс на завтра');
-    if (y === 'r') return edit(chat, mid, a === 'd' ? `✅ Сделано: <b>${esc(it.title)}</b>` : `→ Перенёс на завтра: <b>${esc(it.title)}</b>`);
+    if (y === 'r') return edit(chat, mid, a === 'd' ? `Сделано · <b>${esc(it.title)}</b>` : `Перенесено на завтра · <b>${esc(it.title)}</b>`, { reply_markup: { inline_keyboard: [] } });
     const v = (rerender[y] || viewToday)(D.todayISO());
     return edit(chat, mid, v.text, { reply_markup: v.reply_markup || { inline_keyboard: [] } });
   }
   if (a === 'u') {
     const ids = S.bot.undo[x] || []; ids.forEach(id => { if (St.get_(id)) St.removeItem(id); }); delete S.bot.undo[x]; mark();
-    await ack('Отменено'); return edit(chat, mid, '↩️ Отменено');
+    await ack('Отменено'); return edit(chat, mid, 'Отменено.', { reply_markup: { inline_keyboard: [] } });
   }
   if (a === 'mem') { await ack(); return nextCard(chat); }
-  if (a === 'rk') { await ack(); if (!it) return; return edit(chat, mid, card(it, true, memPlan().queue.length).text, { reply_markup: card(it, true, 0).reply_markup }); }
-  if (a === 'rv') { if (it) St.reviewTopic(x, +y); await ack(['Запомнил: вернётся скоро', 'Принято', 'Отлично'][+y] || ''); return nextCard(chat, mid); }
+  if (a === 'rv') { if (it) St.reviewTopic(x, +y); await ack(['Вернусь к этому скоро', 'Принято', 'Отлично'][+y] || ''); return nextCard(chat, mid); }
   if (a === 'tz') {
-    if (!validTz(`${x}${y ? ':' + y : ''}`)) { await ack('Не знаю такой пояс'); return; }
+    if (!validTz(x)) { await ack('Не знаю такой пояс'); return; }
     S.bot.tz = x; mark(); applyTz(); await ack('Готово');
-    return edit(chat, mid, `Часовой пояс: ${esc(x)}.\n\n${HELP}`);
+    return edit(chat, mid, `Часовой пояс: <code>${esc(x)}</code>\n\n${HELP}`, { reply_markup: { inline_keyboard: [] } });
   }
   if (a === 'c') {
     const b = S.bot;
@@ -215,13 +215,14 @@ export async function handle(u) {
   const m = u.message, cq = u.callback_query, chatObj = m ? m.chat : cq && cq.message ? cq.message.chat : null;
   if (!chatObj || chatObj.type !== 'private') return;
   const chat = chatObj.id, owner = String(E.TG_CHAT_ID || '');
-  if (!owner) return send(chat, `Привет! Это личный бот. Твой chat id: <code>${chat}</code>\n\nЧтобы я начал работать, добавь его в GitHub: <b>Settings → Secrets and variables → Actions → New secret</b>, имя <code>TG_CHAT_ID</code>.`);
+  if (!owner) return send(chat, `Привет. Это личный бот. Твой chat id: <code>${chat}</code>\n\nЧтобы я начал работать, добавь его в GitHub: <b>Settings → Secrets and variables → Actions → New secret</b>, имя <code>TG_CHAT_ID</code>.`);
   if (String(chat) !== owner) { if (cq) return tg('answerCallbackQuery', { callback_query_id: cq.id }).catch(() => { }); return send(chat, 'Это личный бот, доступ закрыт.'); }
   if (!S.bot.chat) { S.bot.chat = chat; mark(); }
   return cq ? onCallback(cq) : onMessage(m);
 }
 
 /* ───────── напоминания ───────── */
+// Первая строка сообщения видна в уведомлении на экране блокировки, поэтому в ней сразу суть.
 const once = key => { if (S.bot.sent[key]) return false; S.bot.sent[key] = Date.now(); mark(); return true; };
 export async function tick(now = new Date()) {
   const b = S.bot; if (!b.chat || !b.on || !b.tz) return;
@@ -233,17 +234,16 @@ export async function tick(now = new Date()) {
     if (!x.time) continue;
     const [hh, mm] = x.time.split(':').map(Number), at = hh * 60 + mm;
     if (min >= at - 30 && min < at + 20 && once(`t:${x.id}:${t}${x.time}`)) {
-      await send(b.chat, `⏰ ${min < at ? `Через ${at - min} мин` : 'Уже пора'}: <b>${esc(x.title)}</b>${x.subject ? `\n<i>${esc(x.subject)}</i>` : ''}`, kb([[btn('✅ Готово', `d:${x.id}:r`), btn('→ завтра', `z:${x.id}:r`)]]));
+      await send(b.chat, `<b>${min < at ? `Через ${at - min} мин` : 'Пора'}</b> · ${esc(x.title)}\n<code>${x.time}</code>${x.subject ? ` · <i>${esc(x.subject)}</i>` : ''}`, kb([[btn('Готово', `d:${x.id}:r`), btn('Завтра', `z:${x.id}:r`)]]));
     }
   }
   if (b.eve && h >= 20 && h < 23 && once('eve:' + t)) {
-    const tm = D.addDays(t, 1), l = open().filter(x => x.due === tm).sort((a, c) => (a.time || '99').localeCompare(c.time || '99')), tl = tails(t), pl = memPlan();
+    const tm2 = D.addDays(t, 1), l = open().filter(x => x.due === tm2).sort((a, c) => (a.time || '99').localeCompare(c.time || '99')), tl = tails(t), pl = memPlan();
     if (l.length || tl.length || pl.queue.length) {
-      let text = '<b>Вечер</b>\n';
-      if (l.length) text += `\nЗавтра:\n${l.slice(0, 6).map(x => line(x, t)).join('\n')}\n`;
-      if (tl.length) text += `\n🔴 Хвостов: ${tl.length}\n`;
-      if (pl.queue.length) text += `\n🧠 Память: ${nCards(pl.queue.length)}, около ${pl.mins} мин`;
-      await send(b.chat, text, kb([...(pl.queue.length ? [[btn('🧠 Освежить память', 'mem')]] : []), [appBtn('Открыть приложение')]]));
+      let text = `<b>Вечер</b>\n<i>завтра, ${esc(D.fmtDay(tm2))}</i>\n\n${l.length ? quote(l.slice(0, 6).map(itemLine).join('\n')) : 'На завтра дел со сроком нет.'}`;
+      if (tl.length) text += `\nХвостов: ${tl.length}`;
+      if (pl.queue.length) text += `\nПамять: ${nCards(pl.queue.length)}, около ${pl.mins} мин`;
+      await send(b.chat, text, kb([bottom(pl.queue.length)]));
     }
   }
 }

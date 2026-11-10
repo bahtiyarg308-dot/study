@@ -72,11 +72,11 @@ await clear(); await handle(msg('сдать лабу завтра в 10'));
 const added = St.items().find(x => x.title === 'Сдать лабу');
 ok('plain text becomes a task with date and time (same parser as the app)', added && added.due === day(1) && added.time === '10:00' && added.source === 'telegram', JSON.stringify(added && [added.due, added.time]));
 const am = await last('sendMessage'); const undo = buttons(am).find(b => /^u:/.test(b.callback_data));
-ok('the reply confirms and offers undo', /Добавил/.test(am.text) && !!undo);
+ok('the reply confirms and offers undo', /Добавлено/.test(am.text) && !!undo);
 await handle(cb(undo.callback_data));
 ok('undo removes it (and leaves a tombstone for the app)', !St.get_(added.id) && !!St.get().dead[added.id]);
 await clear(); await handle(msg('купить билет\nпозвонить в деканат в пятницу'));
-ok('several lines add several tasks', /Добавил 2/.test((await last('sendMessage')).text) && St.items().some(x => x.title === 'Купить билет') && St.items().some(x => /деканат/i.test(x.title)));
+ok('several lines add several tasks', /Добавлено/.test((await last('sendMessage')).text) && St.items().some(x => x.title === 'Купить билет') && St.items().some(x => /деканат/i.test(x.title)));
 await clear(); await handle({ message: { chat: { id: 42, type: 'private' }, sticker: {} } });
 ok('non-text messages get a polite hint', /только текст/.test((await last('sendMessage')).text));
 
@@ -98,9 +98,8 @@ ok('/soon lists upcoming deadlines', /Лаба по физике/.test((await la
 // — память прямо в Telegram
 await clear(); await handle(msg('/memory'));
 let c1 = await last('sendMessage');
-ok('/memory sends the most urgent card, without the answer', /Conditionals/.test(c1.text) && !/Ответ:/.test(c1.text) && buttons(c1).some(b => b.callback_data === 'rk:tp2'));
-await handle(cb('rk:tp2', 60));
-ok('«Показать ответ» reveals it', /Ответ:<\/b> if \+ past simple/.test((await last('editMessageText')).text));
+ok('/memory sends the most urgent card with the answer hidden behind a spoiler', /Conditionals/.test(c1.text) && /<tg-spoiler>if \+ past simple<\/tg-spoiler>/.test(c1.text));
+ok('and three grade buttons, no extra «show answer» step', buttons(c1).filter(b => /^rv:/.test(b.callback_data)).length === 3 && !buttons(c1).some(b => /^rk:/.test(b.callback_data)));
 await handle(cb('rv:tp2:2', 60));
 ok('a grade is applied to the topic (memory updated, same model as the app)', St.get_('tp2').mem.n === 2 && St.get_('tp2').mem.s > 1.5, JSON.stringify(St.get_('tp2').mem.s));
 ok('the next card appears in the same message', /Present Perfect/.test((await last('editMessageText')).text));
@@ -131,10 +130,10 @@ await tick(at(8, 20)); ok('and only once a day', (await count('sendMessage', /Д
 St.addItem({ title: 'Консультация', due: D.todayISO(), time: '18:30' });
 await clear(); await tick(at(18, 10));
 const rem = await last('sendMessage');
-ok('a timed task is announced 30 minutes before', rem && /⏰ Через 20 мин/.test(rem.text) && /Консультация/.test(rem.text) && buttons(rem).some(b => b.callback_data.endsWith(':r')));
+ok('a timed task is announced 30 minutes before', rem && /Через 20 мин/.test(rem.text) && !/⏰/.test(rem.text) && /Консультация/.test(rem.text) && buttons(rem).some(b => b.callback_data.endsWith(':r')));
 await tick(at(18, 12)); ok('and not twice', (await count('sendMessage', /Консультация/)) === 1);
 await handle(cb(buttons(rem).find(b => /^d:/.test(b.callback_data)).callback_data, 88));
-ok('«Готово» on a reminder edits it to a short confirmation', /Сделано: <b>Консультация/.test((await last('editMessageText')).text));
+ok('«Готово» on a reminder edits it to a short confirmation', /Сделано · <b>Консультация/.test((await last('editMessageText')).text));
 await clear(); await tick(at(20, 30));
 ok('evening message looks at tomorrow', /Вечер/.test((await last('sendMessage'))?.text || '') && /Лаба по физике/.test((await last('sendMessage')).text));
 
