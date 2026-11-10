@@ -83,11 +83,12 @@ const mark = () => { S.botDirty = true; };
 
 /* ───────── как часто напоминать ───────── */
 // pre — за сколько минут до срока (минус), rep — через сколько минут повторять после срока, maxAfter — как долго,
-// pend — как часто присылать общий список «не сделано» (хвосты и дела без времени)
+// pend — как часто присылать общий список «не сделано» (хвосты и дела без времени),
+// ahead — за сколько дней до срока напоминать утром (для зачётов и сдач, у которых нет точного времени)
 const LEVELS = {
-  calm: { name: 'Спокойно', pre: [-30], rep: 60, maxAfter: 120, pend: 180 },
-  steady: { name: 'Настойчиво', pre: [-30, -10], rep: 10, maxAfter: 120, pend: 60 },
-  loud: { name: 'Очень настойчиво', pre: [-60, -30, -10, -5], rep: 5, maxAfter: 180, pend: 30 },
+  calm: { name: 'Спокойно', pre: [-30], rep: 60, maxAfter: 120, pend: 180, ahead: [1] },
+  steady: { name: 'Настойчиво', pre: [-30, -10], rep: 10, maxAfter: 120, pend: 60, ahead: [3, 1] },
+  loud: { name: 'Очень настойчиво', pre: [-60, -30, -10, -5], rep: 5, maxAfter: 180, pend: 30, ahead: [7, 3, 2, 1] },
 };
 const lv = () => LEVELS[S.bot.lvl] || LEVELS.steady;
 
@@ -116,6 +117,13 @@ function viewTimed(x, left) {
     ...kb([[btn('Готово', `d:${x.id}`, 'success'), btn('Через час', `s:${x.id}`)], [btn('Завтра', `z:${x.id}`), appBtn('Открыть Тень')]]),
   };
 }
+/** Заранее: «Через 3 дня · Зачёт по английскому». Утром, за несколько дней до срока. */
+function viewAhead(t, list) {
+  const word = n => (n === 1 ? 'Завтра' : `Через ${D.days(n)}`);
+  const head = list.length === 1 ? `<b>Скоро · ${esc(list[0].title)}</b>` : `<b>Скоро: ${list.length} ${D.plural(list.length, ['дело', 'дела', 'дел'])}</b>`;
+  const lines = list.slice(0, 8).map(x => `<b>${word(D.diffDays(t, x.due))}</b>  ${esc(x.title)}${sub(x)}\n<i>${esc(D.fmtDay(x.due))}${x.time ? ', ' + x.time : ''}</i>`).join('\n');
+  return { text: `${head}\n\n${quote(lines)}`, ...kb([[appBtn('Открыть Тень')]]) };
+}
 function viewPending(t, min, now) {
   const list = pending(t, min), tl = tails(t), td = list.filter(x => !St.isTail(x, t)), parts = [];
   if (tl.length) parts.push(`<b>Хвосты</b>\n${quote(tl.slice(0, 6).map(x => tailLine(x, t)).join('\n'))}`);
@@ -138,7 +146,7 @@ const validTz = z => { try { new Intl.DateTimeFormat('ru', { timeZone: z }); ret
 function viewSettings() {
   const b = S.bot, chk = on => (on ? '✓ ' : '');
   return {
-    text: `<b>Напоминания</b>\n\n${quote('<b>Спокойно</b>: за 30 минут и каждый час после срока\n<b>Настойчиво</b>: за 30 и 10 минут, потом каждые 10 минут\n<b>Очень настойчиво</b>: каждые 5 минут, пока не сделаешь')}\nДела без времени и хвосты приходят общим списком, пока не будут сделаны. Часовой пояс: <code>${esc(b.tz || 'не выбран')}</code>`,
+    text: `<b>Напоминания</b>\n\n${quote('<b>Спокойно</b>: за 30 минут и каждый час после срока\n<b>Настойчиво</b>: за 30 и 10 минут, потом каждые 10 минут\n<b>Очень настойчиво</b>: каждые 5 минут, пока не сделаешь')}\nДела без точного времени (зачёт, сдача) напоминают утром за несколько дней: в режиме «Настойчиво» за 3 дня и за 1 день. Хвосты и дела дня приходят общим списком, пока не будут сделаны. Часовой пояс: <code>${esc(b.tz || 'не выбран')}</code>`,
     ...kb([Object.entries(LEVELS).map(([k, v]) => btn(`${chk(b.lvl === k)}${v.name}`, `c:lv:${k}`)),
       [7, 8, 9, 10].map(h => btn(`${chk(b.digest === h)}${h}:00`, `c:dg:${h}`)).concat(btn(`${chk(!b.digest)}Без сводки`, 'c:dg:0')),
       [btn(`Вечер про завтра · ${b.eve ? 'вкл' : 'выкл'}`, 'c:ev')],
@@ -236,6 +244,8 @@ export async function tick(now = new Date(clock())) {
 
   // 2. утренняя сводка (остаётся в чате) и общий список «не сделано» (каждый раз заменяет предыдущий)
   const start = b.digest || 8;
+  const soon = open().filter(x => x.due && L.ahead.includes(D.diffDays(t, x.due))).sort((a, c) => a.due.localeCompare(c.due) || (a.time || '').localeCompare(c.time || ''));
+  if (soon.length && awake && h >= start && h < start + 6 && once('ahead:' + t)) { const v = viewAhead(t, soon); await send(b.chat, v.text, { reply_markup: v.reply_markup }); }
   if (b.digest && h >= b.digest && h < b.digest + 6 && once('dig:' + t)) {
     const v = viewDigest(t); await send(b.chat, v.text, { reply_markup: v.reply_markup }); b.pend.last = ms; mark();
   }

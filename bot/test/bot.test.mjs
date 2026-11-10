@@ -72,6 +72,14 @@ const dg = (await sent(/Доброе утро/)).pop();
 ok('morning digest lists the tail and today\'s task, with the memory line', dg && /Хвосты/.test(dg.text) && /Сдать договор/.test(dg.text) && /Позвонить маме/.test(dg.text) && /Память/.test(dg.text), dg && dg.text.slice(0, 50));
 ok('with a green done button and the Mini App', buttons(dg).find(b => b.callback_data === 'd:tail1:g').style === 'success' && buttons(dg).some(b => b.web_app));
 await go(8, 30); ok('no nagging right after the digest', (await sent()).length === 0);
+// — заранее: зачёт на 3 дня вперёд, у него нет времени, поэтому «за 30 минут» не будет, а утром за 3 и за 1 день будет
+St.addItem({ title: 'Зачёт по английскому', due: day(3), subject: 'Английский' });
+St.addItem({ title: 'Курсовая', due: day(5) });
+S.bot.sent['ahead:' + D.todayISO()] = 0; delete S.bot.sent['ahead:' + D.todayISO()];
+await go(8, 40); const ah = (await sent(/Скоро/)).pop();
+ok('a date-only deadline is announced days ahead (3 and 1 day in the default mode)', ah && /Через 3 дня/.test(ah.text) && /Зачёт по английскому/.test(ah.text) && /Завтра/.test(ah.text) && /Лаба по физике/.test(ah.text), ah && ah.text.replace(/\n/g, ' / '));
+ok('but not 5 days ahead', !/Курсовая/.test(ah.text));
+ok('and only once a day', (await (async () => { await go(8, 50); return (await sent(/Скоро/)).length; })()) === 0);
 await go(9, 10);
 const n1 = (await sent(/Не сделано: 1/)).pop();
 ok('an hour later a short «not done» list arrives (tail only, the 18:30 call has its own timer)', n1 && /Сдать договор/.test(n1.text) && !/Позвонить/.test(n1.text));
