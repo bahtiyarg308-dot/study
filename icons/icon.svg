@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><clipPath id="c"><rect width="512" height="512" rx="112"/></clipPath><g clip-path="url(#c)"><rect width="512" height="512" fill="#07070A"/>
+<defs>
+ <radialGradient id="g" cx="78%" cy="18%" r="70%"><stop offset="0" stop-color="#FF5468" stop-opacity=".30"/><stop offset="1" stop-color="#FF5468" stop-opacity="0"/></radialGradient>
+ <linearGradient id="t" gradientUnits="userSpaceOnUse" x1="198" y1="229" x2="62" y2="166"><stop offset="0" stop-color="#FF5468"/><stop offset="1" stop-color="#FF5468" stop-opacity="0"/></linearGradient>
+</defs>
+<rect width="512" height="512" fill="url(#g)"/>
+<g fill="none" stroke="#ECE8E2" stroke-opacity=".3" stroke-width="5"><circle cx="256" cy="256" r="64"/><circle cx="256" cy="256" r="120"/><circle cx="256" cy="256" r="176"/></g>
+<line x1="198" y1="229" x2="62" y2="166" stroke="url(#t)" stroke-width="22" stroke-linecap="round"/>
+<circle cx="198" cy="229" r="26" fill="#FF5468" fill-opacity=".25"/><circle cx="198" cy="229" r="15" fill="#FF5468"/>
+<circle cx="391" cy="143" r="30" fill="none" stroke="#ECE8E2" stroke-opacity=".45" stroke-width="4"/><circle cx="391" cy="143" r="15" fill="#ECE8E2"/>
+<circle cx="256" cy="256" r="9" fill="#ECE8E2"/></g></svg>
