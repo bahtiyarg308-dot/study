@@ -1,5 +1,6 @@
 // Хранилище: всё лежит в браузере на устройстве (localStorage). Никуда не отправляется.
 import { todayISO, addDays, diffDays, iso, fromISO } from './dates.js';
+import { after as memAfter, DAY as MDAY } from './mem.js';
 
 const KEY = 'ten.v1';
 const DEFAULTS = () => ({
@@ -7,7 +8,7 @@ const DEFAULTS = () => ({
   items: [],
   dead: {},
   meta: { seen: '', lastExport: 0, bannerHide: 0, aiOk: 0, acc: null, owner: '', syncedAt: 0, dirty: 0 },
-  settings: { theme: 'mrak', auto: false, calm: false, timer: true, accent: 'lime', noirAcc: 'bone', name: '', snd: { on: true, vol: 2 }, ai: { provider: 'gemini', keys: {}, models: {}, base: '', sees: { tasks: true, notes: true, priv: false } } },
+  settings: { theme: 'mrak', auto: false, calm: false, timer: true, memSec: 90, accent: 'lime', noirAcc: 'bone', name: '', snd: { on: true, vol: 2 }, ai: { provider: 'gemini', keys: {}, models: {}, base: '', sees: { tasks: true, notes: true, priv: false } } },
 });
 
 let S = load();
@@ -43,12 +44,18 @@ export function setMeta(patch) { Object.assign(S.meta, patch); emit(); }
 export const subscribe = f => { subs.add(f); return () => subs.delete(f); };
 export const uid = () => Math.random().toString(36).slice(2, 8) + Date.now().toString(36).slice(-4);
 
+const blank = () => ({
+  id: uid(), kind: 'task', title: '', due: null, time: null, done: false, doneAt: null, createdAt: new Date().toISOString(),
+  subject: '', est: null, step: '', stepMin: null, remind: null, source: 'manual', priv: false, spent: 0,
+});
 export function addItem(o) {
-  const it = {
-    id: uid(), kind: 'task', title: '', due: null, time: null, done: false, doneAt: null, createdAt: new Date().toISOString(),
-    subject: '', est: null, step: '', stepMin: null, remind: null, source: 'manual', priv: false, spent: 0, ...o, u: Date.now(),
-  };
+  const it = { ...blank(), ...o, u: Date.now() };
   S.items.push(it); touch(); return it;
+}
+/** Несколько записей за одно сохранение (темы к экзамену). */
+export function addMany(list) {
+  const u = Date.now(), out = list.map(o => ({ ...blank(), ...o, u }));
+  S.items.push(...out); touch(); return out;
 }
 export function updateItem(id, patch) {
   const it = S.items.find(x => x.id === id); if (!it) return null;
@@ -87,6 +94,33 @@ export function snapRestore(i) {
 export function toggleDone(id) {
   const it = S.items.find(x => x.id === id); if (!it) return;
   it.done = !it.done; it.doneAt = it.done ? new Date().toISOString() : null; it.u = Date.now(); touch(); return it;
+}
+
+// ---- память: темы к экзамену ----
+const skey = x => String(x || '').trim().toLowerCase();
+/** Повтор темы: g — 0 не вспомнил, 1 с трудом, 2 уверенно. */
+export function reviewTopic(id, g, at = Date.now()) {
+  const it = S.items.find(x => x.id === id && x.kind === 'topic'); if (!it) return null;
+  it.mem = memAfter(it.mem, g, at); it.u = at; touch(); return it;
+}
+/** Карточка экзамена на горизонте: одна на предмет, дата следует за темами. */
+export function ensureExam(subject, due) {
+  if (!due) return null;
+  const ex = S.items.find(x => x.exam && skey(x.subject) === skey(subject));
+  if (ex) { if (ex.due !== due) return updateItem(ex.id, { due, done: false, doneAt: null }); return ex; }
+  return addItem({ title: `Экзамен: ${subject.trim()}`, due, subject: subject.trim(), exam: true, source: 'memory' });
+}
+/** Переименовать предмет и/или сменить дату экзамена у всех его тем. */
+export function editSubject(oldName, name, due) {
+  const k = skey(oldName), now = Date.now(); name = name.trim();
+  S.items.forEach(x => { if (skey(x.subject) === k && (x.kind === 'topic' || x.exam)) { x.subject = name; if (x.kind === 'topic') x.due = due || null; x.u = now; } });
+  if (due) ensureExam(name, due);
+  touch();
+}
+export function removeSubject(name) {
+  const k = skey(name);
+  S.items.filter(x => (x.kind === 'topic' || x.exam) && skey(x.subject) === k).forEach(x => { S.items = S.items.filter(y => y.id !== x.id); S.dead[x.id] = Date.now(); });
+  touch();
 }
 export function setSettings(patch) { Object.assign(S.settings, patch); emit(); }
 export function setAI(patch) { Object.assign(S.settings.ai, patch); emit(); }
@@ -173,6 +207,13 @@ export function loadDemo() {
   mk({ title: 'Сдать лабораторную', due: d(9), subject: 'Комп. графика', est: 12, step: 'Запустить сцену в проекте', stepMin: 15 });
   mk({ title: 'Курсовая: черновик', due: d(14), subject: 'Курсовая', est: 10 });
   mk({ title: 'Зачёт по английскому', due: d(17), subject: 'Английский', est: 6 });
+  // память: темы к зачёту и экзамену с разной свежестью
+  const nowT = Date.now(), ago = n => nowT - n * MDAY;
+  const hist = (...steps) => steps.reduce((m, [daysAgo, g]) => memAfter(m, g, ago(daysAgo)), null);
+  const eng = [['Present Perfect', hist([6, 2], [2.5, 2])], ['Conditionals', hist([5, 1])], ['Phrasal verbs', hist([1, 2])], ['Passive voice', null], ['Reported speech', null], ['Modal verbs', hist([7, 0])], ['Articles', null], ['Word formation', null]];
+  const phy = [['Кинематика', hist([4, 2])], ['Законы Ньютона', hist([3, 1])], ['Работа и энергия', null], ['Импульс', null], ['Колебания', null], ['Термодинамика', null]];
+  addMany([...eng.map(([title, mem]) => ({ kind: 'topic', title, subject: 'Английский', due: d(17), mem, source: 'demo' })), ...phy.map(([title, mem]) => ({ kind: 'topic', title, subject: 'Физика', due: d(24), mem, source: 'demo' }))]);
+  addItem({ title: 'Экзамен: Физика', due: d(24), subject: 'Физика', exam: true, source: 'memory' });
   mk({ title: 'Позвонить в деканат', due: d(1), time: '10:00', subject: 'Деканат' });
   mk({ kind: 'note', title: 'Шейдер: туман и rim light. Глянуть урок по PBR.', subject: 'Комп. графика' });
   // история: сделанные дела за последние недели (для «Активность»)

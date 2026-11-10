@@ -1,5 +1,6 @@
 // ИИ-помощник. Ключ хранится только в браузере; запросы идут напрямую к провайдеру.
 import * as St from './store.js';
+import * as Mem from './mem.js';
 import * as D from './dates.js';
 
 export const PROVIDERS = {
@@ -57,7 +58,9 @@ export function snapshot() {
   const tasks = a.tasks ? vis.filter(i => i.kind === 'task').sort((x, y) => (x.done - y.done) || (x.due || '9').localeCompare(y.due || '9')).slice(0, 80)
     .map(i => ({ id: i.id, title: i.title, due: i.due, time: i.time, done: i.done, tail: St.isTail(i, t), daysLeft: i.due ? D.diffDays(t, i.due) : null, subject: i.subject || undefined, estHours: i.est || undefined, firstStep: i.step || undefined })) : [];
   const notes = a.notes ? vis.filter(i => i.kind === 'note').slice(0, 40).map(i => ({ id: i.id, title: i.title, subject: i.subject || undefined })) : [];
-  return { today: t, weekday: D.WD[D.dow(t)], tasks, notes };
+  // память: темы к экзаменам и то, насколько они свежи (шанс вспомнить сейчас, %)
+  const memory = a.tasks ? Mem.subjects(vis).map(s => { const st = Mem.stats(s); return { subject: s.name, exam: s.due || undefined, daysLeft: s.due ? D.diffDays(t, s.due) : undefined, freshNowPct: Math.round(st.now * 100), freshAtExamPct: st.exam === null ? undefined : Math.round(st.exam * 100), notStarted: st.fresh, fading: st.fade, topics: s.topics.slice(0, 40).map(x => { const r = Mem.rec(x.mem); return { title: x.title, freshPct: r === null ? null : Math.round(r * 100) }; }) }; }).slice(0, 12) : [];
+  return { today: t, weekday: D.WD[D.dow(t)], tasks, notes, ...(memory.length ? { memory } : {}) };
 }
 export function counts() {
   const a = cfg().sees, t = D.todayISO(), vis = St.items().filter(it => a.priv || !it.priv);
@@ -67,6 +70,7 @@ export function counts() {
 
 const SYS = `Ты — помощник в приложении-планировщике «Тень». Отвечай по-русски, коротко и по делу (до 4 предложений), без вступлений и воды.
 Ты видишь актуальный снимок данных пользователя в JSON. Опирайся только на него, не выдумывай дела, id и даты.
+memory — темы к экзаменам: freshPct — шанс вспомнить тему прямо сейчас (null — ещё не начата), freshAtExamPct — прогноз на день экзамена, если больше не повторять. Когда спрашивают, что учить или готов ли пользователь, опирайся на эти цифры и называй конкретные темы; советуй сначала самое тусклое и ближайший экзамен. Не придумывай оценки, которых нет в данных.
 Горизонт (радар): чем меньше дней до срока, тем ближе дело к центру. «Хвост» — просроченное дело (tail=true): его надо закрывать в первую очередь, самый дешёвый — первым.
 Если пользователь просит добавить, перенести, отметить сделанным или удалить дело — верни это в actions; применяет их сам пользователь после подтверждения.
 Формат ответа — СТРОГО один JSON без текста вне него:
