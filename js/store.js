@@ -7,7 +7,7 @@ const DEFAULTS = () => ({
   items: [],
   dead: {},
   meta: { seen: '', lastExport: 0, bannerHide: 0, aiOk: 0, acc: null, owner: '', syncedAt: 0, dirty: 0 },
-  settings: { theme: 'mrak', auto: false, calm: false, accent: 'lime', noirAcc: 'bone', name: '', snd: { on: true, vol: 2 }, ai: { provider: 'gemini', keys: {}, models: {}, base: '', sees: { tasks: true, notes: true, priv: false } } },
+  settings: { theme: 'mrak', auto: false, calm: false, timer: true, accent: 'lime', noirAcc: 'bone', name: '', snd: { on: true, vol: 2 }, ai: { provider: 'gemini', keys: {}, models: {}, base: '', sees: { tasks: true, notes: true, priv: false } } },
 });
 
 let S = load();
@@ -163,7 +163,7 @@ export function mergeRemote(rem) {
 export function loadDemo() {
   const t = todayISO(), d = n => addDays(t, n);
   const mk = o => addItem({ source: 'manual', ...o });
-  mk({ title: 'Сдать договор по учёбе', due: d(-6), subject: 'Деканат', est: 0.25, step: 'Написать в деканат: что принести', stepMin: 5 });
+  mk({ title: 'Сдать договор по учёбе', due: d(-6), subject: 'Деканат', est: 0.25, step: 'Написать в деканат: что принести' });
   mk({ title: 'Конспект §12', due: d(-2), subject: 'История', est: 1, step: 'Открыть учебник и прочитать первый абзац', stepMin: 10 });
   mk({ title: 'Распечатать лабу', due: t, time: '09:30', subject: 'Комп. графика', done: true, doneAt: new Date().toISOString() });
   mk({ title: 'Повторить §14', due: t, time: '18:00', subject: 'История', est: 0.5, stepMin: 25 });

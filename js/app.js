@@ -51,13 +51,15 @@ function weekStrip(t) {
   const weekOpen = open.filter(x => x.due >= ws && x.due <= D.addDays(ws, 6) && x.due >= t).length, tails = open.filter(x => x.due < t).length;
   return `<div class="panel week">${cells}</div><p class="week-sum">${weekOpen ? `Сроков до конца недели: ${weekOpen}` : 'До конца недели сроков нет'}${tails ? ` · ${nTails(tails)}` : ''}</p>`;
 }
+/** Таймер нужен только для настоящей работы: от часа и дольше или если сам задал шаг в минутах. Быстрому делу достаточно «Готово». */
+const timerOn = it => St.settings().timer !== false && it.kind === 'task' && !it.done && ((it.est || 0) >= 1 || !!it.stepMin);
 function nowCard(it) {
   const t = today(), tail = St.isTail(it, t), dd = St.daysTo(it, t), mins = it.stepMin || (tail ? 5 : 15);
   const sub = tail ? `<span class="hotc">Тянется ${D.days(-dd)}</span>` : `${esc(when(it))}${dd > 0 ? ' · ' + D.rel(it.due, t) : ''}`;
   return `<section class="panel now ${tail ? 'tail' : ''}"><span class="tag ${tail ? 'hot' : ''}">${tail ? 'Сейчас · хвост' : 'Сейчас'}</span>
     <h2 class="now-title" data-act="open" data-id="${it.id}">${esc(it.title)}</h2>
     <p class="now-sub">${sub}${it.step ? `<br>Шаг: ${esc(it.step)}` : ''}</p>${tail ? '<div class="comet"></div>' : ''}
-    <div class="btn-row"><button class="btn btn-primary btn-lg" data-act="room" data-id="${it.id}">${ic('play')}${mins} мин</button><button class="btn btn-ghost" data-act="done" data-id="${it.id}">Готово</button></div></section>`;
+    <div class="btn-row"><button class="btn btn-primary btn-lg" data-act="done" data-id="${it.id}">${ic('check')}Готово</button>${timerOn(it) ? `<button class="btn btn-ghost" data-act="room" data-id="${it.id}" aria-label="Таймер на ${mins} минут">${ic('play')}${mins} мин</button>` : ''}</div></section>`;
 }
 function backupBanner() {
   const m = St.meta(), n = St.items().length;
@@ -199,13 +201,13 @@ function settingsHTML() {
   const tog = (k, t, d, on) => `<button class="mrow" data-act="tog" data-k="${k}" role="switch" aria-checked="${on}"><span class="grow"><b>${t}</b><small>${d}</small></span><span class="switch" aria-checked="${on}"></span></button>`;
   return `<div class="tg">${['mrak', 'noch', 'bumaga', 'pastel'].map(card).join('')}</div>
   <div class="lbl">Акцент · ${pal[curKey]?.[4] || ''}</div><div class="cdots" role="group" aria-label="Акцент">${dots}</div>
-  <div class="panel mlist" style="margin-top:18px">${tog('auto', 'Авто по времени суток', 'С 20:00 до 7:00 — «Мрак», днём — «Бумага»', !!s.auto)}${tog('snd', 'Звуки', 'Щелчок на каждую кнопку и ноты на панели', snd.on !== false)}${snd.on !== false ? `<div class="mrow"><span class="grow"><b>Громкость</b></span><div class="seg" role="group" aria-label="Громкость">${[[1, 'Тихо'], [2, 'Средне'], [3, 'Громко']].map(([v, l]) => `<button aria-pressed="${(snd.vol ?? 2) === v}" data-act="vol" data-v="${v}">${l}</button>`).join('')}</div></div>` : ''}${tog('calm', 'Тише анимации', 'Выключить всё движение', !!s.calm)}</div>
+  <div class="panel mlist" style="margin-top:18px">${tog('auto', 'Авто по времени суток', 'С 20:00 до 7:00 — «Мрак», днём — «Бумага»', !!s.auto)}${tog('snd', 'Звуки', 'Щелчок на каждую кнопку и ноты на панели', snd.on !== false)}${snd.on !== false ? `<div class="mrow"><span class="grow"><b>Громкость</b></span><div class="seg" role="group" aria-label="Громкость">${[[1, 'Тихо'], [2, 'Средне'], [3, 'Громко']].map(([v, l]) => `<button aria-pressed="${(snd.vol ?? 2) === v}" data-act="vol" data-v="${v}">${l}</button>`).join('')}</div></div>` : ''}${tog('calm', 'Тише анимации', 'Выключить всё движение', !!s.calm)}${tog('timer', 'Таймер у больших дел', 'Кнопка «Комната» у дел на час и дольше. Выключи, если не нужна', s.timer !== false)}</div>
   <div class="lbl">Как к тебе обращаться</div><input class="field" id="sname" placeholder="Имя, по желанию" value="${esc(s.name || '')}" maxlength="24" autocomplete="off">`;
 }
 function refreshSettings() {
   applyAppearance();
   const sh = sheetEl();
-  if (sh && sh.dataset.k === 'set') { const b = $('.sheet-body', sh); const y = b.scrollTop; b.innerHTML = settingsHTML(); b.scrollTop = y; }
+  if (sh && sh.dataset.k === 'set') { const b = $('.sheet-body', sh); const y = b.scrollTop; b.innerHTML = settingsHTML(); b.scrollTop = y; ui.enter = false; render(); }
   else { ui.enter = false; render(); }
 }
 
@@ -341,7 +343,10 @@ function openDetail(id) {
   const t = today(), tail = St.isTail(it, t), dd = St.daysTo(it, t), rows = St.costRows(it, t), mins = it.stepMin || (tail ? 5 : 15);
   let b = '';
   if (it.kind === 'task') b += `<p class="sub" style="margin:0">${it.due ? `${esc(when(it))} · ${tail ? `<span class="hotc">просрочено на ${D.days(-dd)}</span>` : D.rel(it.due, t)}` : 'Без срока'}${it.est ? ` · около ${D.fmtHours(it.est)}` : ''}${it.spent ? ` · в «Комнате» ${D.fmtHours(it.spent / 60)}` : ''}</p>`;
-  if (it.kind === 'task' && !it.done) b += `<div class="panel stepbox"><span class="h2">${it.step ? 'Первый шаг' : 'Старт'} · ${mins} мин</span><div class="st">${esc(it.step || 'Начни с малого')}</div><button class="btn btn-primary btn-lg btn-block" data-act="room" data-id="${it.id}" style="margin-top:14px">${ic('play')}Начать</button></div>`;
+  if (it.kind === 'task' && !it.done) {
+    if (timerOn(it)) b += `<div class="panel stepbox"><span class="h2">${it.step ? 'Первый шаг' : 'Старт'} · ${mins} мин</span><div class="st">${esc(it.step || 'Начни с малого')}</div><button class="btn btn-ghost btn-block" data-act="room" data-id="${it.id}" style="margin-top:14px">${ic('play')}Включить таймер</button></div>`;
+    else if (it.step) b += `<p class="sub">Шаг: ${esc(it.step)}</p>`;
+  }
   if (rows) b += `<div class="lbl">Цена откладывания</div><div class="panel" style="padding:10px 14px 6px">${rows.map((r, i) => { const c = r.perDay <= 2 ? 'good' : r.perDay <= 5 ? 'gold' : 'bad'; const pct = Math.max(6, Math.min(100, r.perDay / it.est * 100)); return `<div class="cb ${i === 0 ? 'on' : ''}"><span class="l">${r.label}</span><span class="tr"><i style="width:${pct}%;background:var(--${c})"></i></span><span class="v">${D.fmtHours(r.perDay)}</span></div>`; }).join('')}<p class="sub" style="font-size:12.5px;margin:2px 0 6px">Нагрузка в день до сдачи</p></div>`;
   openSheet({
     eyebrow: esc(it.kind === 'note' ? 'Заметка' : it.subject || (tail ? 'Хвост' : 'Дело')), title: esc(it.title), body: b,
