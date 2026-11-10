@@ -491,3 +491,5 @@ html[data-calm=true] *,html[data-calm=true] *::before,html[data-calm=true] *::af
 .rev .sheet-foot .btn{flex:1 1 0;min-width:0;padding-left:8px;padding-right:8px}
 .rv-d{font:500 13px var(--f-mono);color:var(--muted);white-space:nowrap}
 .rv-d b{display:inline;font-size:inherit;color:var(--ink);font-weight:600}
+
+.tabbar.noind .tab-ind{opacity:0!important}

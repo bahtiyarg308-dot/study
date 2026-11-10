@@ -15,6 +15,7 @@ const SYMBOLS = {
   list: '<path d="M9 6.5h11M9 12h11M9 17.5h11"/><circle cx="4.5" cy="6.5" r=".9" fill="currentColor"/><circle cx="4.5" cy="12" r=".9" fill="currentColor"/><circle cx="4.5" cy="17.5" r=".9" fill="currentColor"/>',
   note: '<path d="M6 3.5h9l4 4V20.5H6zM14.5 3.5v4.5H19M9 12.5h7M9 16h7"/>',
   more: '<circle cx="6" cy="12" r="1.4" fill="currentColor"/><circle cx="12" cy="12" r="1.4" fill="currentColor"/><circle cx="18" cy="12" r="1.4" fill="currentColor"/>',
+  mem: '<rect x="3.5" y="8" width="14" height="11.5" rx="2.6"/><path d="M7.5 4.5h10.2A2.8 2.8 0 0 1 20.5 7.3V15"/>',
   spark: '<path d="M11 3.5l1.9 5.6 5.6 1.9-5.6 1.9L11 18.5l-1.9-5.6L3.5 11l5.6-1.9z"/><path d="M19 15.5v4M17 17.5h4"/>',
   check: '<path d="M5 12.5l4.5 4.5L19 7"/>',
   chev: '<path d="M9 5.5l6.5 6.5L9 18.5"/>',
@@ -58,7 +59,7 @@ export const THEMES = {
   pastel: { look: 'color', mode: 'light', name: 'Пастель', desc: 'Светлая, с цветом' },
 };
 export const accOf = (look, s = St.settings()) => (look === 'noir' ? NOIR_ACC[s.noirAcc] || NOIR_ACC.bone : COLORS[s.accent] || COLORS.lime);
-export const themeId = (s = St.settings()) => { if (s.auto) { const h = new Date().getHours(); return h >= 20 || h < 7 ? 'mrak' : 'bumaga'; } return THEMES[s.theme] ? s.theme : 'mrak'; };
+export const themeId = (s = St.settings()) => (THEMES[s.theme] ? s.theme : 'mrak');
 export function applyAppearance() {
   const s = St.settings(), th = THEMES[themeId(s)], r = document.documentElement, c = accOf(th.look, s);
   if (r.dataset.look !== th.look) r.dataset.look = th.look;

@@ -8,7 +8,7 @@ const DEFAULTS = () => ({
   items: [],
   dead: {},
   meta: { seen: '', lastExport: 0, bannerHide: 0, aiOk: 0, acc: null, owner: '', syncedAt: 0, dirty: 0 },
-  settings: { theme: 'mrak', auto: false, calm: false, timer: true, memSec: 90, accent: 'lime', noirAcc: 'bone', name: '', snd: { on: true, vol: 2 }, ai: { provider: 'gemini', keys: {}, models: {}, base: '', sees: { tasks: true, notes: true, priv: false } } },
+  settings: { theme: 'mrak', auto: false, calm: false, memSec: 90, accent: 'lime', noirAcc: 'bone', name: '', snd: { on: true, vol: 2 }, ai: { provider: 'gemini', keys: {}, models: {}, base: '', sees: { tasks: true, notes: true, priv: false } } },
 });
 
 let S = load();

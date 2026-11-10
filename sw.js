@@ -1,5 +1,5 @@
 // Офлайн: сначала сеть (чтобы обновления доходили сразу), без сети — из кэша.
-const CACHE = 'ten-v7';
+const CACHE = 'ten-v8';
 const SHELL = ['./', 'index.html', 'manifest.webmanifest', 'css/app.css', 'css/fonts.css', 'js/app.js', 'js/ui.js', 'js/sfx.js', 'js/dates.js', 'js/store.js', 'js/mem.js', 'js/radar.js', 'js/ai.js', 'js/fb.js', 'js/auth.js', 'js/gate.js', 'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png', 'fonts/oswald-cyrillic-wght-normal.woff2', 'fonts/oswald-latin-wght-normal.woff2', 'fonts/rubik-cyrillic-wght-normal.woff2', 'fonts/rubik-latin-wght-normal.woff2', 'fonts/martian-mono-cyrillic-wght-normal.woff2', 'fonts/martian-mono-latin-wght-normal.woff2'];
 
 self.addEventListener('install', e => {
